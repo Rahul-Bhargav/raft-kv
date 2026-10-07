@@ -11,7 +11,7 @@ in a few minutes and any agent can pick it up cold. The spec is in `DESIGN.md`, 
 |---|---|---|---|
 | T01 | Project scaffold: uv, Python 3.12, pytest, empty packages | n/a | review |
 | T02 | `raft/messages.py`: message dataclasses + JSON round trip | T01 | review |
-| T03 | `raft/storage.py`: `Storage` protocol + `MemoryStorage` | T02 | todo |
+| T03 | `raft/storage.py`: `Storage` protocol + `MemoryStorage` | T02 | review |
 | T04 | `raft/kv.py`: `KVStore` (set / delete / noop) | T01 | todo |
 | T05 | `sim/network.py`: `SimNetwork` (delay, drop, dup, partition) | T02 | todo |
 | **G1** | **Gate: foundations reviewed** | T02–T05 | waiting |
@@ -80,6 +80,7 @@ The user marks tasks `done` and gates `approved` after review. Agents never do.
 ### T03 · Storage
 `raft/storage.py`, `tests/test_storage.py`. `Storage` Protocol and `MemoryStorage` with the index-0 sentinel.
 **Done when:** the tests cover `term_at(0) == 0`, append, `entries_from`, `truncate_from` (middle, end, past the end) and `set_term_and_vote`.
+*Notes:* DESIGN.md is silent on bad indexes, so `MemoryStorage` raises `IndexError` for them (`term_at` outside `0..last`, `entry_at` outside `1..last`, `entries_from`/`truncate_from` below 1) instead of letting a negative index wrap or touching the sentinel. A start index past the end is not an error: `entries_from` returns `[]` and `truncate_from` does nothing.
 
 ### T04 · KV store
 `raft/kv.py`, `tests/test_kv.py`. `KVStore.apply` handles set, delete (a missing key is fine) and noop. An unknown op raises `ValueError`.
