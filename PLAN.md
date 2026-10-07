@@ -13,7 +13,7 @@ in a few minutes and any agent can pick it up cold. The spec is in `DESIGN.md`, 
 | T02 | `raft/messages.py`: message dataclasses + JSON round trip | T01 | review |
 | T03 | `raft/storage.py`: `Storage` protocol + `MemoryStorage` | T02 | review |
 | T04 | `raft/kv.py`: `KVStore` (set / delete / noop) | T01 | review |
-| T05 | `sim/network.py`: `SimNetwork` (delay, drop, dup, partition) | T02 | todo |
+| T05 | `sim/network.py`: `SimNetwork` (delay, drop, dup, partition) | T02 | review |
 | **G1** | **Gate: foundations reviewed** | T02–T05 | waiting |
 | T06 | `RaftNode` skeleton: roles, election timer, start election, step down on higher term (R2) | G1 | todo |
 | T07 | Voting and leadership: grant rules (R3, R4), count votes, heartbeats | T06 | todo |
@@ -91,6 +91,7 @@ No duplicate detection yet (that's T16).
 `sim/network.py`, `tests/test_network.py`. As specified in DESIGN.md. Partitions are checked **at delivery time**.
 **Done when:** the tests show delivery after the delay, reordering, drop_rate=1 dropping everything, duplication,
 partition and heal, and the same seed producing the same delivery sequence.
+*Notes:* DESIGN.md leaves some choices open, so: delays are inclusive `[min_delay, max_delay]`; nodes not named in `partition()` form one extra group together (`partition([{"n1"}])` isolates n1); a node in two groups raises `ValueError`; a new `partition()` replaces the old one; a message dropped by a partition is gone for good; a duplicate gets its own random delay.
 
 ### T06 · Node skeleton
 `raft/node.py`, `tests/test_node_election.py`. `Role`, `RaftConfig` and `RaftNode` with outputs (`take_messages`,
