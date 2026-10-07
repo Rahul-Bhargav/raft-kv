@@ -10,7 +10,7 @@ in a few minutes and any agent can pick it up cold. The spec is in `DESIGN.md`, 
 | ID | Task | Depends on | Status |
 |---|---|---|---|
 | T01 | Project scaffold: uv, Python 3.12, pytest, empty packages | n/a | review |
-| T02 | `raft/messages.py`: message dataclasses + JSON round trip | T01 | todo |
+| T02 | `raft/messages.py`: message dataclasses + JSON round trip | T01 | review |
 | T03 | `raft/storage.py`: `Storage` protocol + `MemoryStorage` | T02 | todo |
 | T04 | `raft/kv.py`: `KVStore` (set / delete / noop) | T01 | todo |
 | T05 | `sim/network.py`: `SimNetwork` (delay, drop, dup, partition) | T02 | todo |
@@ -75,6 +75,7 @@ The user marks tasks `done` and gates `approved` after review. Agents never do.
 ### T02 · Messages
 `raft/messages.py`, `tests/test_messages.py`. Five dataclasses exactly as in DESIGN.md, plus `Message`, `to_dict` and `from_dict`.
 **Done when:** every message type round-trips through `json.dumps`/`json.loads`, entries included, and an unknown `type` raises `ValueError`.
+*Notes:* the three shared fields (`src`, `dst`, `term`) live in a private `_Envelope` base so field order matches DESIGN.md. `to_dict` returns `entries` as a list, and both directions copy commands (no aliasing). Malformed input other than a bad `type` raises `KeyError`/`TypeError`, not `ValueError`.
 
 ### T03 · Storage
 `raft/storage.py`, `tests/test_storage.py`. `Storage` Protocol and `MemoryStorage` with the index-0 sentinel.
