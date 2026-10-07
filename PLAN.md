@@ -57,8 +57,9 @@ in a few minutes and any agent can pick it up cold. The spec is in `DESIGN.md`, 
 
    2–5 lines: what changed and why, and anything the reviewer should look at first.
 
-   Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+   Co-Authored-By: <the Claude model that actually wrote the change> <noreply@anthropic.com>
    ```
+   For example `Claude Sonnet 5.5` or `Claude Opus 5.5`. The trailer must credit the model that actually wrote the commit.
    Never push unless the user asks.
 7. **Report** in 10 lines or fewer: files changed, tests added, decisions made, and anything the user should look at.
 

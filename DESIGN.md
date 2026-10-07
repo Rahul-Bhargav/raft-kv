@@ -83,6 +83,10 @@ class Storage(Protocol):
     def truncate_from(self, index: int) -> None: ...          # delete index..last
 ```
 
+**Bounds (decided in T03):** `term_at` raises `IndexError` outside `0..last_index`, and `entry_at` outside `1..last_index`.
+`entries_from` / `truncate_from` raise below 1, and are a harmless `[]` / no-op past the end. **The node must check
+`prev_log_index <= last_index()` before calling `term_at(prev_log_index)`.**
+
 **Contract:** when a mutating method returns, the change is durable. `MemoryStorage` keeps the
 log as a list with a sentinel `Entry(0, {"op": "noop"})` at index 0. The simulator keeps a
 crashed node's `MemoryStorage` and gives it back on restart; that's how a "disk" survives in tests.
@@ -168,6 +172,12 @@ class SimCluster:
 ```
 
 All randomness comes from one `random.Random(seed)`, so the same seed gives the same run.
+
+`SimNetwork` details (decided in T05):
+- Delays are inclusive `[min_delay, max_delay]`, and a duplicate gets its own delay.
+- Nodes not named in `partition()` form one extra group together, so `partition([{"n1"}])` isolates n1.
+- A new `partition()` replaces the old one.
+- A message blocked at delivery is gone for good.
 
 ## Invariants (`tests/invariants.py`, checked after every simulator step)
 
