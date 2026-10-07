@@ -34,6 +34,53 @@ SAMPLES = {
 }
 
 
+# The wire format, written out by hand. Each direction is tested against this table on its own,
+# so a mistake that to_dict and from_dict share (a renamed key, say) can't pass by symmetry.
+# Other containers and the dashboard parse exactly this JSON.
+WIRE = {
+    "RequestVote": (
+        RequestVote("n1", "n2", 4, last_log_index=9, last_log_term=3),
+        '{"type": "RequestVote", "src": "n1", "dst": "n2", "term": 4,'
+        ' "last_log_index": 9, "last_log_term": 3}',
+    ),
+    "RequestVoteReply": (
+        RequestVoteReply("n2", "n1", 4, granted=True),
+        '{"type": "RequestVoteReply", "src": "n2", "dst": "n1", "term": 4, "granted": true}',
+    ),
+    "AppendEntries": (
+        AppendEntries(
+            "n1", "n3", 4, prev_log_index=6, prev_log_term=2, leader_commit=5,
+            entries=(Entry(2, {"op": "set", "key": "a", "value": "1"}), Entry(3, {"op": "noop"})),
+        ),
+        '{"type": "AppendEntries", "src": "n1", "dst": "n3", "term": 4,'
+        ' "prev_log_index": 6, "prev_log_term": 2,'
+        ' "entries": [{"term": 2, "command": {"op": "set", "key": "a", "value": "1"}},'
+        '             {"term": 3, "command": {"op": "noop"}}],'
+        ' "leader_commit": 5}',
+    ),
+    "AppendEntries (heartbeat)": (
+        AppendEntries("n1", "n3", 4, prev_log_index=9, prev_log_term=3, entries=(), leader_commit=9),
+        '{"type": "AppendEntries", "src": "n1", "dst": "n3", "term": 4,'
+        ' "prev_log_index": 9, "prev_log_term": 3, "entries": [], "leader_commit": 9}',
+    ),
+    "AppendEntriesReply": (
+        AppendEntriesReply("n3", "n1", 4, success=True, match_index=8, last_log_index=8),
+        '{"type": "AppendEntriesReply", "src": "n3", "dst": "n1", "term": 4,'
+        ' "success": true, "match_index": 8, "last_log_index": 8}',
+    ),
+}
+
+
+@pytest.mark.parametrize("msg, wire", WIRE.values(), ids=WIRE.keys())
+def test_serialization_matches_wire_format(msg, wire):
+    assert to_dict(msg) == json.loads(wire)
+
+
+@pytest.mark.parametrize("msg, wire", WIRE.values(), ids=WIRE.keys())
+def test_deserialization_parses_wire_format(msg, wire):
+    assert from_dict(json.loads(wire)) == msg
+
+
 @pytest.mark.parametrize("msg", SAMPLES.values(), ids=SAMPLES.keys())
 def test_round_trips_through_json(msg):
     wire = json.dumps(to_dict(msg))
@@ -45,12 +92,6 @@ def test_to_dict_is_json_native_and_tagged(msg):
     d = to_dict(msg)
     assert d["type"] == type(msg).__name__
     assert d == json.loads(json.dumps(d))  # only dicts, lists, str, int, bool
-
-
-def test_to_dict_flattens_entries():
-    d = to_dict(SAMPLES["AppendEntries"])
-    assert d["entries"][0] == {"term": 2, "command": {"op": "set", "key": "a", "value": "1"}}
-    assert [e["term"] for e in d["entries"]] == [2, 2, 3]
 
 
 def test_from_dict_rebuilds_entries_as_tuple_of_entry():

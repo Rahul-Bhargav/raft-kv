@@ -1,4 +1,21 @@
-"""Raft messages and their JSON-safe dict form. Pure data: no I/O."""
+"""Raft messages and their JSON-safe dict form. Pure data: no I/O.
+
+There are two exchanges, both one-way (a reply is a separate message, not a return value):
+  - Leader election:   candidate --RequestVote-->   every node --RequestVoteReply-->   candidate
+  - Normal operation:  leader    --AppendEntries--> each follower --AppendEntriesReply--> leader
+
+Every class here is `@dataclass(frozen=True, slots=True)`:
+  - dataclass: generates __init__, __eq__ and __repr__ from the field list. Equality is by value
+    and by class, so RequestVoteReply("n2", "n1", 4, True) == the same message built anywhere
+    else, but never equals a different message type that happens to hold the same values.
+    asdict() also gives us serialization for free. A plain class would need all of that by hand.
+  - frozen=True: fields can't be reassigned after creation. A message can sit in the simulated
+    network, or be duplicated, while the sender keeps running, and nobody can change it in flight.
+    Frozen is shallow: Entry.command is still a mutable dict, which is why to_dict/from_dict copy it.
+  - slots=True: fields are stored in fixed slots instead of a per-instance __dict__, so objects are
+    smaller and attribute access is slightly faster. This matters a little for Entry, since logs hold
+    many of them. For messages it's a minor nicety.
+"""
 
 from dataclasses import asdict, dataclass
 from typing import Any
@@ -6,7 +23,11 @@ from typing import Any
 
 @dataclass(frozen=True, slots=True)
 class Entry:
-    """One log entry. Its index is implied by its position in the log."""
+    """One log entry: a client command plus the term of the leader that created it.
+
+    Not a message itself, but AppendEntries carries entries from leader to followers.
+    Its index is implied by its position in the log, so it isn't stored.
+    """
 
     term: int
     command: dict
@@ -14,26 +35,51 @@ class Entry:
 
 @dataclass(frozen=True, slots=True)
 class _Envelope:
-    """Fields every message carries."""
+    """Fields every message carries: sender, receiver, and the sender's current term.
+
+    The term is how stale nodes are detected. A receiver that sees a higher term adopts it and
+    becomes a follower (rule R2). A message with a lower term than the receiver's is out of date.
+    """
 
     src: str
     dst: str
     term: int
 
-
 @dataclass(frozen=True, slots=True)
 class RequestVote(_Envelope):
+    """Election, step 1: a candidate asks for a vote.
+
+    Sent to every other node when a node's election timer runs out and it becomes a candidate
+    for `term`. last_log_index/last_log_term describe the candidate's log, so a voter can refuse
+    a candidate whose log is behind its own (rule R3).
+    """
+
     last_log_index: int
     last_log_term: int
 
 
 @dataclass(frozen=True, slots=True)
 class RequestVoteReply(_Envelope):
+    """Election, step 2: a node answers a RequestVote.
+
+    granted=True means this node voted for the candidate in `term` (at most one vote per term).
+    A candidate that collects grants from a majority becomes the leader.
+    """
+
     granted: bool
 
 
 @dataclass(frozen=True, slots=True)
 class AppendEntries(_Envelope):
+    """Normal operation: the leader sends new log entries, or a heartbeat, to one follower.
+
+    The leader sends it when a client write is proposed (entries to replicate) and every
+    heartbeat_interval ticks (`entries` empty), so followers know the leader is alive and don't
+    start an election. prev_log_index/prev_log_term are the consistency check: the follower
+    accepts only if its own entry at prev_log_index has that term. leader_commit tells the
+    follower how far it may apply.
+    """
+
     prev_log_index: int
     prev_log_term: int
     entries: tuple[Entry, ...]
@@ -42,9 +88,16 @@ class AppendEntries(_Envelope):
 
 @dataclass(frozen=True, slots=True)
 class AppendEntriesReply(_Envelope):
-    # Replies are one-way, so they describe themselves: on success
-    # match_index = prev_log_index + len(entries); last_log_index is the
-    # follower's last index, a backtracking hint for the leader on failure.
+    """Normal operation: a follower answers an AppendEntries.
+
+    success=True: the follower's log now matches the leader's up to match_index
+    (= prev_log_index + len(entries)). The leader counts these to decide what is committed.
+    success=False: the consistency check failed. last_log_index (the follower's last index)
+    tells the leader where to retry from.
+    Messages are one-way, so the reply carries everything the leader needs without the
+    leader having to remember which request it answers.
+    """
+
     success: bool
     match_index: int
     last_log_index: int
