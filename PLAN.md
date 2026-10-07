@@ -12,7 +12,7 @@ in a few minutes and any agent can pick it up cold. The spec is in `DESIGN.md`, 
 | T01 | Project scaffold: uv, Python 3.12, pytest, empty packages | n/a | review |
 | T02 | `raft/messages.py`: message dataclasses + JSON round trip | T01 | review |
 | T03 | `raft/storage.py`: `Storage` protocol + `MemoryStorage` | T02 | review |
-| T04 | `raft/kv.py`: `KVStore` (set / delete / noop) | T01 | todo |
+| T04 | `raft/kv.py`: `KVStore` (set / delete / noop) | T01 | review |
 | T05 | `sim/network.py`: `SimNetwork` (delay, drop, dup, partition) | T02 | todo |
 | **G1** | **Gate: foundations reviewed** | T02–T05 | waiting |
 | T06 | `RaftNode` skeleton: roles, election timer, start election, step down on higher term (R2) | G1 | todo |
@@ -85,6 +85,7 @@ The user marks tasks `done` and gates `approved` after review. Agents never do.
 ### T04 · KV store
 `raft/kv.py`, `tests/test_kv.py`. `KVStore.apply` handles set, delete (a missing key is fine) and noop. An unknown op raises `ValueError`.
 No duplicate detection yet (that's T16).
+*Notes:* a command with no `op` raises `ValueError` like an unknown one; a `set`/`delete` missing `key`/`value` raises `KeyError`. `client_id`/`seq` are accepted and ignored.
 
 ### T05 · Simulated network
 `sim/network.py`, `tests/test_network.py`. As specified in DESIGN.md. Partitions are checked **at delivery time**.
