@@ -537,7 +537,10 @@ def test_candidate_steps_down_when_the_winner_of_its_term_appears():
     node.receive(vote_request("n3", term=1))
     node.receive(grant("n3"))
     node.receive(grant("n4"))
-    assert node.take_messages() == [RequestVoteReply("n1", "n3", 1, granted=False)]
+    assert node.take_messages() == [
+        AppendEntriesReply("n1", "n2", 1, success=True, match_index=0, last_log_index=0),
+        RequestVoteReply("n1", "n3", 1, granted=False),
+    ]
     assert node.role == Role.FOLLOWER
 
 

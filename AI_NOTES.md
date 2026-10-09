@@ -46,3 +46,18 @@ The README's AI section is summarized from this file. Newest entries go at the b
 - **Test bounds are measured, not guessed:** each "elected within N ticks" bound is about twice the worst case seen over the
   test's seeds. The split-vote test narrows timeouts to [30, 35) and checks that most seeds really did split, so it can't pass
   without exercising the tie-break.
+
+## 2026-10-08 · Log replication (T09, written by Claude Opus)
+- **Judgment call, heartbeats carry entries:** every AppendEntries carries all entries from `next_index` on, so a lost one is
+  retried by the next heartbeat with no extra bookkeeping. The cost is resending unconfirmed entries every 10 ticks, which is
+  fine at this size.
+- **A subtle stale reply:** a failure reply doesn't say which request it answers. A late copy of an early failure, arriving
+  after the follower caught up, would push `next_index` back, and the leader would keep resending entries the follower has.
+  DESIGN.md's "ignore a `match_index` lower than known" already covers it, because a failure carries `match_index` 0. The
+  comment in `_on_append_entries_reply` explains why a failure after a success can only be stale.
+- **R5, one step further:** a follower doesn't even rewrite entries it already has. Deleting and re-adding them ends with the
+  same log, but a crash in between would lose entries it had already confirmed to the leader. A test with a storage that
+  records every write checks that a duplicate AppendEntries writes nothing.
+- **How it was verified:** 19 mutations of `node.py` in a scratch copy (calling `term_at` before the length check, truncating
+  after `prev_log_index` on every message, confirming our last index instead of what the message covered, no stale-reply check,
+  ignoring the backtracking hint, no floor at 1, no retry, and others). Every one failed at least one test.

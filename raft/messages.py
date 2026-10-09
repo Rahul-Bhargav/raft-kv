@@ -64,10 +64,10 @@ class AppendEntries(_Envelope):
     """Normal operation: the leader sends new log entries, or a heartbeat, to one follower.
 
     The leader sends it when a client write is proposed (entries to replicate) and every
-    heartbeat_interval ticks (`entries` empty), so followers know the leader is alive and don't
-    start an election. prev_log_index/prev_log_term are the consistency check: the follower
-    accepts only if its own entry at prev_log_index has that term. leader_commit tells the
-    follower how far it may apply.
+    heartbeat_interval ticks (`entries` empty if the follower is up to date), so followers know
+    the leader is alive and don't start an election. prev_log_index/prev_log_term are the
+    consistency check: the follower accepts only if its own entry at prev_log_index has that term.
+    leader_commit tells the follower how far it may apply.
     """
 
     prev_log_index: int

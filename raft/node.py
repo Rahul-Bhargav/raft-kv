@@ -99,7 +99,7 @@ class RaftNode:
             # stepping down, so a deposed leader resumes the countdown it was elected with.
             self._heartbeat_elapsed += 1
             if self._heartbeat_elapsed >= self.config.heartbeat_interval:
-                self._send_heartbeats()
+                self._broadcast_append_entries()
             return
         self._election_elapsed += 1
         if self._election_elapsed >= self._election_timeout:
@@ -122,7 +122,23 @@ class RaftNode:
             self._on_request_vote_reply(msg)
         elif isinstance(msg, AppendEntries):
             self._on_append_entries(msg)
-        # An AppendEntriesReply needs nothing yet: the leader uses them for replication (T09).
+        elif isinstance(msg, AppendEntriesReply):
+            self._on_append_entries_reply(msg)
+
+    def propose(self, command: dict) -> tuple[int, int] | None:
+        """Leader only: add `command` to the log and start replicating it to every peer.
+
+        Returns the new entry's (index, term), or None if this node isn't the leader. The entry
+        isn't committed yet. The caller knows its write took effect only once take_committed()
+        hands out this index with this term; a later leader may overwrite it with another entry.
+        """
+        if self.role != Role.LEADER:
+            return None
+        # Copy the command, so a caller changing its dict later can't change the log.
+        # R1: the entry is saved before any AppendEntries carrying it is queued.
+        self.storage.append([Entry(self.term, dict(command))])
+        self._broadcast_append_entries()  # send it now rather than at the next heartbeat
+        return self.storage.last_index(), self.term
 
     # --- outputs: each take_*() returns what is queued and clears it ---
 
@@ -202,20 +218,25 @@ class RaftNode:
     def _become_leader(self) -> None:
         self.role = Role.LEADER
         self.leader_id = self.node_id
-        # Start optimistic: assume every peer's log matches ours, and back off on failure (T09).
+        # Start optimistic: assume every peer's log matches ours, and back off on failure.
         # Nothing is known to be replicated on any peer yet.
         self.next_index = {peer: self.storage.last_index() + 1 for peer in self.peers}
         self.match_index = {peer: 0 for peer in self.peers}
         self._event(f"became leader (term {self.term})")
-        self._send_heartbeats()  # announce the win now, before any follower times out
+        self._broadcast_append_entries()  # announce the win now, before any follower times out
 
-    def _send_heartbeats(self) -> None:
+    def _broadcast_append_entries(self) -> None:
+        """Send every peer an AppendEntries. It's also the heartbeat, so restart that countdown."""
         self._heartbeat_elapsed = 0
         for peer in self.peers:
             self._send_append_entries(peer)
 
     def _send_append_entries(self, peer: str) -> None:
-        """Send `peer` an AppendEntries. For now always a heartbeat; T09 adds the entries."""
+        """Send `peer` every entry from next_index[peer] on: a plain heartbeat if it has them all.
+
+        next_index moves only when the peer confirms entries, so every heartbeat repeats whatever
+        is still unconfirmed. A lost AppendEntries is simply retried at the next one.
+        """
         prev_index = self.next_index[peer] - 1
         self._send(
             AppendEntries(
@@ -224,19 +245,97 @@ class RaftNode:
                 self.term,
                 prev_log_index=prev_index,
                 prev_log_term=self.storage.term_at(prev_index),  # 1 <= next_index <= last + 1
-                entries=(),
+                entries=tuple(self.storage.entries_from(prev_index + 1)),
                 leader_commit=self.commit_index,
             )
         )
 
+    def _on_append_entries_reply(self, msg: AppendEntriesReply) -> None:
+        """Leader: record how much of our log a follower has, or back up and resend."""
+        if self.role != Role.LEADER:
+            # Only this term's leader sends AppendEntries, so we led this term. The reply can
+            # still arrive after we crashed and restarted, as a follower in the same term.
+            return
+        peer = msg.src
+        if msg.match_index < self.match_index[peer]:
+            # Stale: a delayed or duplicated answer to an older AppendEntries; we know more.
+            # A failure has match_index 0, so this also drops every failure once the peer has
+            # confirmed an entry. From then on we send from match_index + 1, and the peer keeps
+            # the entries it confirmed for the rest of our term (in our term only we send it
+            # entries, and they never conflict with each other), so its check can't fail again.
+            return
+        if msg.success:
+            self.match_index[peer] = msg.match_index
+            self.next_index[peer] = msg.match_index + 1
+        else:
+            # The peer lacks our entry at next_index - 1. Back up one entry, or straight to
+            # just past the peer's last entry if its log is shorter than that. Never below 1.
+            self.next_index[peer] = max(
+                1, min(self.next_index[peer] - 1, msg.last_log_index + 1)
+            )
+            self._send_append_entries(peer)  # retry now rather than at the next heartbeat
+
     def _on_append_entries(self, msg: AppendEntries) -> None:
-        """Same term: the sender won this term's election, so follow it."""
+        """Same term: the sender won this term's election. Follow it and take its entries."""
         # R3 allows one winner per term, so another leader in our term would be a safety bug.
         assert self.role != Role.LEADER, f"{self.node_id}: two leaders in term {self.term}"
         self._become_follower()  # a candidate that hears from the winner stops campaigning
         self.leader_id = msg.src
-        self._reset_election_timer()  # R4: a valid AppendEntries from the current leader
-        # T09: consistency check, append msg.entries, and reply.
+        # R4: a valid AppendEntries from the current leader, even if the log check below fails.
+        # The leader is alive either way; it only has to back up and resend.
+        self._reset_election_timer()
+
+        if not self._has_entry(msg.prev_log_index, msg.prev_log_term):
+            # Consistency check failed: we don't have the entry the new ones must follow.
+            # Taking them anyway could leave a gap, or put them after an entry the leader
+            # doesn't have. Change nothing; our last index tells the leader where to retry.
+            self._reply_append_entries(msg.src, success=False, match_index=0)
+            return
+        self._append_new_entries(msg.prev_log_index, msg.entries)
+        # R1: the entries are saved before the reply that confirms them is queued. We confirm
+        # only what this message covered: our log may go further, but entries past this point
+        # weren't checked against the leader's log, so they may not be the leader's entries.
+        self._reply_append_entries(
+            msg.src, success=True, match_index=msg.prev_log_index + len(msg.entries)
+        )
+
+    def _has_entry(self, index: int, term: int) -> bool:
+        """Does our log have an entry at `index` from `term`? Index 0 (no entry) always matches."""
+        # Check the length first: term_at raises past the end of the log.
+        return index <= self.storage.last_index() and self.storage.term_at(index) == term
+
+    def _append_new_entries(self, prev_index: int, entries: tuple[Entry, ...]) -> None:
+        """Put the leader's entries after prev_index, keeping the ones we already have (R5)."""
+        for offset, entry in enumerate(entries):
+            index = prev_index + 1 + offset
+            if index > self.storage.last_index():
+                self.storage.append(entries[offset:])  # the rest are all new to us
+                return
+            if self.storage.term_at(index) != entry.term:
+                # R5: a real conflict. Our entry here came from a leader of another term, so it
+                # and every entry after it are missing from the current leader's log. A leader
+                # has every committed entry (R3 and R6 together make sure of that), so these were
+                # never committed: delete them and take the leader's instead.
+                self.storage.truncate_from(index)
+                self.storage.append(entries[offset:])
+                return
+            # Same index and term: it's the entry we already have, because a leader creates
+            # only one entry per index in its term. Keep it.
+        # Everything was already in our log. A delayed or duplicated AppendEntries ends up here,
+        # and must not delete what comes after it: a newer message may have added those entries.
+
+    def _reply_append_entries(self, leader: str, success: bool, match_index: int) -> None:
+        """Answer the leader. Every reply has our last index: on failure, it's where to retry."""
+        self._send(
+            AppendEntriesReply(
+                self.node_id,
+                leader,
+                self.term,
+                success=success,
+                match_index=match_index,
+                last_log_index=self.storage.last_index(),
+            )
+        )
 
     # --- terms and roles ---
 

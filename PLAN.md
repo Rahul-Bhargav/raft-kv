@@ -19,7 +19,7 @@ in a few minutes and any agent can pick it up cold. The spec is in `DESIGN.md`, 
 | T07 | Voting and leadership: grant rules (R3, R4), count votes, heartbeats | T06 | done |
 | T08 | `sim/cluster.py`: `SimCluster` + `tests/test_election.py` | T07 | done |
 | **G2** | **Gate: leader election reviewed** | T06–T08 | approved |
-| T09 | Log replication: `propose`, consistency check, conflict truncation (R5), backtracking | G2 | todo |
+| T09 | Log replication: `propose`, consistency check, conflict truncation (R5), backtracking | G2 | review |
 | T10 | Commit: majority rule (R6), `leader_commit`, `take_committed`, noop on election (R7) | T09 | todo |
 | T11 | `SimCluster.write` + KV apply + `tests/test_replication.py` | T10 | todo |
 | **G3** | **Gate: replication reviewed** | T09–T11 | waiting |
@@ -119,6 +119,7 @@ exactly one leader is elected within a bound, re-election after crashing the lea
 `raft/node.py`, `tests/test_node_replication.py`. `propose` (leader only), AppendEntries carrying entries, the follower consistency
 check, R5 truncation, replies with `match_index`/`last_log_index`, and leader backtracking. Include
 `test_reordered_append_does_not_truncate`.
+*Notes:* every AppendEntries, heartbeats included, carries all entries from `next_index` on, so a lost one is retried by the next heartbeat (`next_index` moves only on a confirmed reply). Failure replies carry `match_index` 0, so the "ignore a lower `match_index`" rule also drops a late failure once the peer has confirmed an entry. A refused AppendEntries still resets the timer (R4). `_send_heartbeats` is now `_broadcast_append_entries` (`propose` uses it too); one T07 test now expects the follower's reply to a heartbeat, and the `AppendEntries` docstring no longer says heartbeats are always empty.
 
 ### T10 · Commit
 `raft/node.py`, `tests/test_node_replication.py`. The leader advances `commit_index` with R6, followers follow `leader_commit`,
