@@ -62,6 +62,15 @@ class RaftNode:
         self._election_timeout = 0
         self._reset_election_timer()  # start the first countdown
 
+        # Candidate state: who granted us a vote in this term. A set, so a duplicate counts once.
+        self._votes: set[str] = set()
+
+        # Leader state, set up on winning an election. next_index: the next log index to send
+        # each peer. match_index: the highest index known to be replicated on each peer.
+        self.next_index: dict[str, int] = {}
+        self.match_index: dict[str, int] = {}
+        self._heartbeat_elapsed = 0
+
         # Outputs, collected by the driver with take_*().
         self._outbox: list[Message] = []
         self._events: list[str] = []
@@ -79,7 +88,18 @@ class RaftNode:
     # --- inputs ---
 
     def tick(self) -> None:
-        """Advance time by one tick. When the election timer runs out, start an election."""
+        """Advance time by one tick.
+
+        A leader sends heartbeats every heartbeat_interval ticks. A follower or candidate whose
+        election timer runs out starts an election.
+        """
+        if self.role == Role.LEADER:
+            # A leader never times out, so its election timer is paused. R4 has no reset for
+            # stepping down, so a deposed leader resumes the countdown it was elected with.
+            self._heartbeat_elapsed += 1
+            if self._heartbeat_elapsed >= self.config.heartbeat_interval:
+                self._send_heartbeats()
+            return
         self._election_elapsed += 1
         if self._election_elapsed >= self._election_timeout:
             self._start_election()
@@ -94,7 +114,14 @@ class RaftNode:
             # so the sender learns it is stale and steps down.
             self._reject_stale(msg)
             return
-        # From here on msg.term == self.term. Voting and heartbeats are handled from T07 on.
+        # From here on msg.term == self.term.
+        if isinstance(msg, RequestVote):
+            self._on_request_vote(msg)
+        elif isinstance(msg, RequestVoteReply):
+            self._on_request_vote_reply(msg)
+        elif isinstance(msg, AppendEntries):
+            self._on_append_entries(msg)
+        # An AppendEntriesReply needs nothing yet: the leader uses them for replication (T09).
 
     # --- outputs: each take_*() returns what is queued and clears it ---
 
@@ -120,12 +147,97 @@ class RaftNode:
         self.storage.set_term_and_vote(term, self.node_id)
         self.role = Role.CANDIDATE
         self.leader_id = None
+        self._votes = set()
         self._reset_election_timer()  # R4: starting an election (a new countdown in case it splits)
         self._event(f"started election (term {term})")
         last_index = self.storage.last_index()
         last_term = self.storage.term_at(last_index)  # in bounds: 0 <= last_index
         for peer in self.peers:
             self._send(RequestVote(self.node_id, peer, term, last_index, last_term))
+        self._record_vote(self.node_id)  # wins at once if this is a one-node cluster
+
+    def _on_request_vote(self, msg: RequestVote) -> None:
+        """Vote for the candidate if R3 allows it, and reply either way."""
+        # R3: at most one vote per term. Granting the same candidate again is fine: it's a
+        # duplicate of a request we already granted. A candidate or leader has voted for itself.
+        free_to_vote = self.voted_for in (None, msg.src)
+        granted = free_to_vote and self._log_is_at_least_as_up_to_date(
+            msg.last_log_term, msg.last_log_index
+        )
+        if granted:
+            # R1: save the vote before queuing the reply that announces it, so a restart can't
+            # give this term's vote to someone else.
+            self.storage.set_term_and_vote(self.term, msg.src)
+            self._reset_election_timer()  # R4: granting a vote
+        self._send(RequestVoteReply(self.node_id, msg.src, self.term, granted))
+
+    def _log_is_at_least_as_up_to_date(self, last_term: int, last_index: int) -> bool:
+        """R3: is a log ending at (last_term, last_index) at least as up to date as ours?
+
+        The later last term wins. With equal last terms, the longer log wins. This keeps a
+        candidate missing committed entries from collecting a majority.
+        """
+        our_last_index = self.storage.last_index()
+        our_last_term = self.storage.term_at(our_last_index)
+        # Tuples compare element by element: last term first, then last index.
+        return (last_term, last_index) >= (our_last_term, our_last_index)
+
+    def _on_request_vote_reply(self, msg: RequestVoteReply) -> None:
+        # Same term, so this answers our current election. Once we have won or stepped down
+        # in this term, late replies don't matter.
+        if self.role == Role.CANDIDATE and msg.granted:
+            self._record_vote(msg.src)
+
+    def _record_vote(self, voter: str) -> None:
+        self._votes.add(voter)
+        if len(self._votes) >= self._majority():
+            self._become_leader()
+
+    def _majority(self) -> int:
+        return (len(self.peers) + 1) // 2 + 1
+
+    # --- leadership ---
+
+    def _become_leader(self) -> None:
+        self.role = Role.LEADER
+        self.leader_id = self.node_id
+        # Start optimistic: assume every peer's log matches ours, and back off on failure (T09).
+        # Nothing is known to be replicated on any peer yet.
+        self.next_index = {peer: self.storage.last_index() + 1 for peer in self.peers}
+        self.match_index = {peer: 0 for peer in self.peers}
+        self._event(f"became leader (term {self.term})")
+        self._send_heartbeats()  # announce the win now, before any follower times out
+
+    def _send_heartbeats(self) -> None:
+        self._heartbeat_elapsed = 0
+        for peer in self.peers:
+            self._send_append_entries(peer)
+
+    def _send_append_entries(self, peer: str) -> None:
+        """Send `peer` an AppendEntries. For now always a heartbeat; T09 adds the entries."""
+        prev_index = self.next_index[peer] - 1
+        self._send(
+            AppendEntries(
+                self.node_id,
+                peer,
+                self.term,
+                prev_log_index=prev_index,
+                prev_log_term=self.storage.term_at(prev_index),  # 1 <= next_index <= last + 1
+                entries=(),
+                leader_commit=self.commit_index,
+            )
+        )
+
+    def _on_append_entries(self, msg: AppendEntries) -> None:
+        """Same term: the sender won this term's election, so follow it."""
+        # R3 allows one winner per term, so another leader in our term would be a safety bug.
+        assert self.role != Role.LEADER, f"{self.node_id}: two leaders in term {self.term}"
+        self._become_follower()  # a candidate that hears from the winner stops campaigning
+        self.leader_id = msg.src
+        self._reset_election_timer()  # R4: a valid AppendEntries from the current leader
+        # T09: consistency check, append msg.entries, and reply.
+
+    # --- terms and roles ---
 
     def _adopt_term(self, term: int) -> None:
         """R2: move to a higher term as a follower, with no vote cast in it yet."""

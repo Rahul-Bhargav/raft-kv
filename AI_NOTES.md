@@ -32,3 +32,11 @@ The README's AI section is summarized from this file. Newest entries go at the b
   passed, and the new serialization tests failed for both AppendEntries cases.
 - **Also from review:** I asked what `frozen=True, slots=True` do and why dataclasses instead of plain classes, and asked for each
   message to document when it's used. Both are now in `raft/messages.py`'s docstrings.
+
+## 2026-10-08 · Leader election (T06–T07, written by Claude Opus)
+- **Judgment call on R4:** the election timer is reset only on the three events R4 lists. Two tempting extra resets were left
+  out on purpose: on adopting a higher term (a candidate with an outdated log could then keep every timer from expiring, so
+  nobody electable would ever stand), and when a leader steps down (its paused countdown resumes instead). Both have unit tests.
+- **How it was verified:** besides the unit tests, each election rule was broken on purpose in a scratch copy (re-grant refused,
+  log check comparing index first, `>` instead of `>=`, timer reset on a refused vote, majority off by one, votes not cleared
+  between elections, and others) and the suite was rerun. Every mutation failed at least one test.

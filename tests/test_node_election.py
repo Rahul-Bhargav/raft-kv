@@ -73,6 +73,33 @@ def message_from_n2(kind: type, term: int) -> Message:
 ALL_KINDS = [RequestVote, RequestVoteReply, AppendEntries, AppendEntriesReply]
 
 
+def vote_request(
+    src: str, term: int = 1, last_log_index: int = 0, last_log_term: int = 0
+) -> RequestVote:
+    return RequestVote(src, "n1", term, last_log_index, last_log_term)
+
+
+def grant(voter: str, term: int = 1) -> RequestVoteReply:
+    return RequestVoteReply(voter, "n1", term, granted=True)
+
+
+def heartbeat(src: str, term: int = 1) -> AppendEntries:
+    return AppendEntries(
+        src, "n1", term, prev_log_index=0, prev_log_term=0, entries=(), leader_commit=0
+    )
+
+
+def leader(storage: MemoryStorage | None = None) -> RaftNode:
+    """n1 right after winning its first election (votes from n2 and n3), outputs already taken."""
+    node = candidate(storage)
+    node.receive(grant("n2", node.term))
+    node.receive(grant("n3", node.term))
+    assert node.role == Role.LEADER
+    node.take_messages()
+    node.take_events()
+    return node
+
+
 # --- a new node ---
 
 
@@ -241,3 +268,287 @@ def test_lower_term_replies_are_dropped(reply):
     assert (node.role, node.term, node.voted_for) == (Role.CANDIDATE, 2, "n1")
     assert node.take_messages() == []
     assert node.take_events() == []
+
+
+# --- R3: granting votes ---
+
+
+def test_grants_its_vote_to_the_first_candidate_and_saves_it():
+    storage = MemoryStorage()
+    node = make_node(storage)
+    node.receive(vote_request("n2"))
+    assert node.take_messages() == [RequestVoteReply("n1", "n2", 1, granted=True)]
+    assert (storage.term, storage.voted_for) == (1, "n2")  # R1: saved before the reply goes out
+
+
+def test_refuses_a_second_candidate_in_the_same_term():
+    node = make_node()
+    node.receive(vote_request("n2"))
+    node.receive(vote_request("n3"))
+    assert node.take_messages()[1] == RequestVoteReply("n1", "n3", 1, granted=False)
+    assert node.voted_for == "n2"
+
+
+def test_grants_again_to_the_same_candidate():
+    # The network can duplicate a request: the copy must get the same answer, not a refusal.
+    node = make_node()
+    node.receive(vote_request("n2"))
+    node.receive(vote_request("n2"))
+    assert node.take_messages() == [RequestVoteReply("n1", "n2", 1, granted=True)] * 2
+
+
+def test_restarted_node_keeps_its_vote():
+    storage = MemoryStorage()
+    make_node(storage).receive(vote_request("n2"))
+    restarted = make_node(storage)
+    restarted.receive(vote_request("n3"))
+    assert restarted.take_messages() == [RequestVoteReply("n1", "n3", 1, granted=False)]
+
+
+def test_votes_again_in_a_later_term():
+    node = make_node()
+    node.receive(vote_request("n2", term=1))
+    node.receive(vote_request("n3", term=2))
+    assert node.take_messages()[1] == RequestVoteReply("n1", "n3", 2, granted=True)
+    assert node.voted_for == "n3"
+
+
+def test_candidate_refuses_rivals_in_its_own_term():
+    node = candidate()  # term 1, voted for itself
+    node.receive(vote_request("n2", term=1))
+    assert node.take_messages() == [RequestVoteReply("n1", "n2", 1, granted=False)]
+    assert (node.role, node.voted_for) == (Role.CANDIDATE, "n1")
+
+
+@pytest.mark.parametrize(
+    "last_log_term, last_log_index, granted",
+    [
+        (2, 3, True),  # the same log end
+        (2, 4, True),  # same last term, longer
+        (3, 1, True),  # later last term: wins even though shorter
+        (2, 2, False),  # same last term, shorter
+        (1, 9, False),  # earlier last term: loses even though longer
+        (0, 0, False),  # empty log
+    ],
+)
+def test_vote_requires_a_log_at_least_as_up_to_date(last_log_term, last_log_index, granted):
+    node = make_node(storage_with(1, 1, 2))  # our log ends at index 3, term 2
+    node.receive(vote_request("n2", 3, last_log_index, last_log_term))
+    assert node.take_messages() == [RequestVoteReply("n1", "n2", 3, granted)]
+    assert node.voted_for == ("n2" if granted else None)
+
+
+def test_refusing_an_outdated_candidate_leaves_the_vote_free():
+    node = make_node(storage_with(1, 1, 2))
+    node.receive(vote_request("n2", term=3, last_log_index=1, last_log_term=1))  # behind
+    node.receive(vote_request("n3", term=3, last_log_index=3, last_log_term=2))  # up to date
+    assert node.take_messages() == [
+        RequestVoteReply("n1", "n2", 3, granted=False),
+        RequestVoteReply("n1", "n3", 3, granted=True),
+    ]
+
+
+# --- R4: what resets the election timer ---
+
+
+def test_granting_a_vote_resets_the_election_timer():
+    node = make_node()  # fixed 30-tick timeout
+    tick(node, 20)
+    node.receive(vote_request("n2"))
+    tick(node, 29)
+    assert node.role == Role.FOLLOWER
+    node.tick()
+    assert node.role == Role.CANDIDATE
+
+
+def test_refusing_a_vote_does_not_reset_the_election_timer():
+    # The case R4 exists for: a candidate that can never win (its log is behind) must not hold
+    # our timer back, or the nodes that could win would never stand.
+    node = make_node(storage_with(1))
+    tick(node, 20)
+    node.receive(vote_request("n2", term=5, last_log_index=0, last_log_term=0))
+    assert node.take_messages() == [RequestVoteReply("n1", "n2", 5, granted=False)]
+    tick(node, 10)
+    assert (node.role, node.term) == (Role.CANDIDATE, 6)
+
+
+def test_heartbeats_from_the_current_leader_keep_a_follower_from_standing():
+    node = make_node()
+    for _ in range(10):
+        tick(node, 29)
+        node.receive(heartbeat("n2"))
+    assert (node.role, node.term, node.leader_id) == (Role.FOLLOWER, 1, "n2")
+    tick(node, 29)
+    assert node.role == Role.FOLLOWER
+    node.tick()  # 30 ticks after the last heartbeat
+    assert node.role == Role.CANDIDATE
+
+
+def test_stale_append_entries_does_not_reset_the_election_timer():
+    node = make_node(storage_with(term=3))
+    tick(node, 20)
+    node.receive(heartbeat("n2", term=2))
+    tick(node, 10)
+    assert node.role == Role.CANDIDATE
+
+
+# --- counting votes ---
+
+
+def test_candidate_becomes_leader_with_a_majority():
+    node = candidate()  # 5 nodes: it needs 3 votes, its own included
+    node.receive(grant("n2"))
+    assert node.role == Role.CANDIDATE
+    node.receive(grant("n3"))
+    assert (node.role, node.term, node.leader_id) == (Role.LEADER, 1, "n1")
+    assert node.take_events() == ["became leader (term 1)"]
+
+
+def test_a_duplicated_vote_counts_once():
+    node = candidate()
+    node.receive(grant("n2"))
+    node.receive(grant("n2"))
+    assert node.role == Role.CANDIDATE
+
+
+def test_refused_votes_do_not_count():
+    node = candidate()
+    node.receive(RequestVoteReply("n2", "n1", 1, granted=False))
+    node.receive(RequestVoteReply("n3", "n1", 1, granted=False))
+    node.receive(grant("n4"))
+    assert node.role == Role.CANDIDATE
+
+
+def test_votes_from_an_earlier_election_do_not_count():
+    node = candidate(elections=2)  # term 2
+    node.receive(grant("n2", term=1))
+    node.receive(grant("n3", term=1))
+    assert node.role == Role.CANDIDATE
+    node.receive(grant("n2", term=2))
+    node.receive(grant("n3", term=2))
+    assert node.role == Role.LEADER
+
+
+def test_votes_do_not_carry_over_to_the_next_election():
+    node = candidate()
+    node.receive(grant("n2"))  # 2 of the 3 needed in term 1
+    tick(node, 30)  # the election splits: term 2
+    node.receive(grant("n3", term=2))
+    assert node.role == Role.CANDIDATE  # n1 and n3 only: n2's vote was for term 1
+
+
+@pytest.mark.parametrize("cluster_size, votes_needed", [(1, 1), (2, 2), (3, 2), (4, 3), (5, 3)])
+def test_majority_counts_the_candidate_itself(cluster_size, votes_needed):
+    peers = [f"n{i}" for i in range(2, cluster_size + 1)]
+    node = RaftNode("n1", peers, MemoryStorage(), random.Random(0), FIXED)
+    tick(node, 30)
+    votes = 1  # its own
+    for peer in peers:
+        if node.role == Role.LEADER:
+            break
+        node.receive(grant(peer))
+        votes += 1
+    assert node.role == Role.LEADER
+    assert votes == votes_needed
+
+
+def test_single_node_cluster_elects_itself_at_the_first_timeout():
+    node = RaftNode("n1", [], MemoryStorage(), random.Random(0), FIXED)
+    tick(node, 30)
+    assert (node.role, node.term) == (Role.LEADER, 1)
+    assert node.take_messages() == []
+    assert node.take_events() == ["started election (term 1)", "became leader (term 1)"]
+
+
+# --- leading ---
+
+
+def test_new_leader_sends_every_peer_a_heartbeat_at_once():
+    node = candidate(storage_with(1, 1))  # candidate in term 2; log ends at index 2, term 1
+    node.receive(grant("n2", term=2))
+    node.receive(grant("n3", term=2))
+    assert node.take_messages() == [
+        AppendEntries(
+            "n1", peer, 2, prev_log_index=2, prev_log_term=1, entries=(), leader_commit=0
+        )
+        for peer in PEERS
+    ]
+
+
+def test_new_leader_sets_next_index_past_its_log_and_match_index_to_zero():
+    node = leader(storage_with(1, 1))
+    assert node.next_index == {peer: 3 for peer in PEERS}
+    assert node.match_index == {peer: 0 for peer in PEERS}
+
+
+def test_leader_sends_heartbeats_every_interval():
+    node = leader()  # heartbeat_interval is 10
+    for _ in range(3):
+        tick(node, 9)
+        assert node.take_messages() == []
+        node.tick()
+        sent = node.take_messages()
+        assert all(isinstance(m, AppendEntries) and m.entries == () for m in sent)
+        assert [m.dst for m in sent] == PEERS
+
+
+def test_leader_never_times_out():
+    node = leader()
+    tick(node, 1000)
+    assert (node.role, node.term) == (Role.LEADER, 1)
+    assert all(isinstance(m, AppendEntries) for m in node.take_messages())
+
+
+def test_leader_refuses_votes_in_its_own_term():
+    node = leader()
+    node.receive(vote_request("n2", term=1))
+    assert node.take_messages() == [RequestVoteReply("n1", "n2", 1, granted=False)]
+    assert node.role == Role.LEADER
+
+
+def test_deposed_leader_stops_heartbeats_and_resumes_its_countdown():
+    node = leader()  # won right after its timer reset, so a full 30 ticks remain
+    node.receive(AppendEntriesReply("n2", "n1", 3, success=False, match_index=0, last_log_index=0))
+    assert (node.role, node.term, node.leader_id) == (Role.FOLLOWER, 3, None)
+    assert node.take_events() == ["became follower (term 3)"]
+    tick(node, 29)
+    assert node.take_messages() == []  # no more heartbeats
+    node.tick()
+    assert (node.role, node.term) == (Role.CANDIDATE, 4)
+
+
+# --- following ---
+
+
+def test_follower_accepts_a_heartbeat_and_records_the_leader():
+    node = make_node()
+    node.receive(heartbeat("n2", term=1))
+    assert (node.role, node.term, node.leader_id) == (Role.FOLLOWER, 1, "n2")
+    assert node.voted_for is None  # following a leader is not voting for it
+
+
+def test_candidate_steps_down_when_the_winner_of_its_term_appears():
+    node = candidate()  # term 1, voted for itself
+    node.receive(heartbeat("n2", term=1))
+    assert (node.role, node.term, node.leader_id) == (Role.FOLLOWER, 1, "n2")
+    assert node.take_events() == ["became follower (term 1)"]
+    # Same term, so its vote for itself stands (R3): no second vote, and late grants are ignored.
+    assert node.voted_for == "n1"
+    node.receive(vote_request("n3", term=1))
+    node.receive(grant("n3"))
+    node.receive(grant("n4"))
+    assert node.take_messages() == [RequestVoteReply("n1", "n3", 1, granted=False)]
+    assert node.role == Role.FOLLOWER
+
+
+def test_higher_term_append_entries_makes_the_sender_our_leader():
+    node = candidate()
+    node.receive(heartbeat("n2", term=4))
+    assert (node.role, node.term, node.voted_for, node.leader_id) == (Role.FOLLOWER, 4, None, "n2")
+
+
+def test_new_term_forgets_the_old_leader():
+    node = make_node()
+    node.receive(heartbeat("n2", term=1))
+    node.receive(vote_request("n3", term=2))
+    assert node.leader_id is None

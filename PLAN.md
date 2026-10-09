@@ -16,7 +16,7 @@ in a few minutes and any agent can pick it up cold. The spec is in `DESIGN.md`, 
 | T05 | `sim/network.py`: `SimNetwork` (delay, drop, dup, partition) | T02 | done |
 | **G1** | **Gate: foundations reviewed** | T02–T05 | approved |
 | T06 | `RaftNode` skeleton: roles, election timer, start election, step down on higher term (R2) | G1 | review |
-| T07 | Voting and leadership: grant rules (R3, R4), count votes, heartbeats | T06 | todo |
+| T07 | Voting and leadership: grant rules (R3, R4), count votes, heartbeats | T06 | review |
 | T08 | `sim/cluster.py`: `SimCluster` + `tests/test_election.py` | T07 | todo |
 | **G2** | **Gate: leader election reviewed** | T06–T08 | waiting |
 | T09 | Log replication: `propose`, consistency check, conflict truncation (R5), backtracking | G2 | todo |
@@ -107,6 +107,7 @@ R2: a higher term in any message → follower. Lower-term messages are ignored.
 only when granting). Handle `RequestVoteReply` and count the majority. On becoming leader, initialize `next_index`/`match_index` and send
 heartbeats every `heartbeat_interval`. A follower accepts a current-term heartbeat, records `leader_id` and resets its timer (R4).
 Candidates step down on an AppendEntries from a current-term leader. Leave the R7 noop for T10.
+*Notes:* followers don't reply to heartbeats yet (the consistency check and reply come in T09), and the leader ignores same-term `AppendEntriesReply`. `next_index`/`match_index` are public attributes (DESIGN.md names them as volatile state). A leader's election timer is paused, and a deposed leader resumes that countdown instead of resetting it (strict R4). A same-term `AppendEntries` reaching a leader is an Election Safety bug, so it's an `assert`.
 
 ### T08 · Simulated cluster + election tests
 `sim/cluster.py`, `tests/test_election.py`. `SimCluster` as in DESIGN.md (`write` comes in T11). Tests:
