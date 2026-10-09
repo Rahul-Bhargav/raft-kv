@@ -73,3 +73,20 @@ The README's AI section is summarized from this file. Newest entries go at the b
   the lowest index instead of the highest, no noop, a follower committing to its last index instead of the last new entry,
   no `max()`, committing on a failed check, `take_committed` not advancing, and others). Every one failed at least one test.
   The 19 T09 mutations were rerun on the T10 code and all still fail.
+
+## 2026-10-08 · Replication through the cluster (T11, written by Claude Opus)
+- **Spec gap from T08, closed with evidence:** `test_follower_keeps_leader_under_load` now runs about 470 client writes per
+  seed on the same duplicating, reordering network. A follower that reset its election timer only on empty heartbeats passes
+  the old network-only version of the test and fails the new one.
+- **One of my tests was wrong, not the code:** the first version of the "overwritten write returns False" test (the 503 path)
+  timed out instead. The old leader had been cut off right after its election, so its own noop never left it and the new
+  leader's log was shorter. After the heal, the old leader's log was truncated below the lost write's index, and nothing was
+  applied there until a later write. `write()` correctly returned False, but as a timeout (504). The test now commits a write
+  first, so the new leader's noop lands on that index. The demo server (T19) will behave the same way: such a client waits for
+  its timeout instead of getting a quick 503.
+- **A weak test made stronger:** the first convergence test crashed a random node. Instrumenting it showed the victim was never
+  the leader on any seed, so nothing interesting happened. It now crashes the leader in the middle of a write. Even then every
+  write succeeds (the entry had reached a majority before the crash), and the comment says so, so nobody reads the test as
+  covering failed writes.
+- **How it was verified:** mutations of `write()` (no term check, returning right after propose, waiting on any node instead of
+  the leader) each fail a test in `tests/test_replication.py`.

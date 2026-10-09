@@ -100,11 +100,11 @@ def test_outdated_log_cannot_win():
 
 def test_follower_keeps_leader_under_load():
     # R4. Once elected, the leader must never be replaced while it is alive and connected.
-    # The load here is the network: half of all messages are duplicated and delays reach 8 ticks,
-    # so stale copies of old votes and heartbeats keep arriving out of order. No message is
-    # dropped, so heartbeats reach each follower at most 10 + 7 = 17 ticks apart, well inside the
-    # 30-tick minimum timeout: any election here would be a timer bug. (Client writes join the
-    # load once they exist, in T11.)
+    # The load: client writes back to back for 3000 ticks, on a network that duplicates half of
+    # all messages and delays them up to 8 ticks, so stale copies of old votes, heartbeats and
+    # AppendEntries keep arriving out of order. No message is dropped, so the leader's
+    # AppendEntries reach each follower at most 10 + 7 = 17 ticks apart, well inside the 30-tick
+    # minimum timeout: any election here would be a timer bug.
     for seed in range(10):
         cluster = SimCluster(seed=seed, min_delay=1, max_delay=8, dup_rate=0.5)
         leader_id = elect(cluster)
@@ -115,12 +115,22 @@ def test_follower_keeps_leader_under_load():
             assert (c.leader(), c.nodes[leader_id].term) == (leader_id, term), f"seed {seed}"
 
         cluster.checkers.append(same_leader)
-        cluster.run(3000)
+        end = cluster.now + 3000
+        writes = 0
+        # Also bounded by count, so a broken write() that never ticks can't loop forever.
+        while cluster.now < end and writes < 3000:
+            assert cluster.write(f"k{writes}", str(writes)), f"seed {seed}, write {writes}"
+            writes += 1
+        assert writes >= 200, f"seed {seed}: only {writes} writes, too little load"
         later_elections = [
             e for e in cluster.events[events_before:] if e[2].startswith("started election")
         ]
         assert later_elections == [], f"seed {seed}"
         assert_everyone_follows(cluster, leader_id)
+        cluster.run(30)  # the last commit index reaches the followers with the next heartbeat
+        expected = {f"k{i}": str(i) for i in range(writes)}
+        for node_id in cluster.ids:
+            assert cluster.kvs[node_id].data == expected, f"seed {seed}, {node_id}"
 
 
 def test_partitioned_leader_is_replaced_and_steps_down_on_heal():

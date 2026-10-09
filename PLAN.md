@@ -21,7 +21,7 @@ in a few minutes and any agent can pick it up cold. The spec is in `DESIGN.md`, 
 | **G2** | **Gate: leader election reviewed** | T06–T08 | approved |
 | T09 | Log replication: `propose`, consistency check, conflict truncation (R5), backtracking | G2 | review |
 | T10 | Commit: majority rule (R6), `leader_commit`, `take_committed`, noop on election (R7) | T09 | review |
-| T11 | `SimCluster.write` + KV apply + `tests/test_replication.py` | T10 | todo |
+| T11 | `SimCluster.write` + KV apply + `tests/test_replication.py` | T10 | review |
 | **G3** | **Gate: replication reviewed** | T09–T11 | waiting |
 | T12 | `tests/test_failures.py`: restart (R1), minority leader, heal (R2), no majority | G3 | todo |
 | T13 | `test_figure8`: scripted Figure 8 scenario (R6) | T12 | todo |
@@ -129,6 +129,7 @@ check, R5 truncation, replies with `match_index`/`last_log_index`, and leader ba
 ### T11 · Replication through the cluster
 `sim/cluster.py`, `tests/test_replication.py`. `SimCluster.write` plus applying to the per-node `KVStore`. Tests: a write applies
 on all nodes, a lagging follower catches up after restart, conflicting uncommitted entries get overwritten, and all KV stores converge.
+*Notes:* `write()` waits until the node it proposed on has applied the entry's index, then compares the stored term there (a committed entry never changes). `step()` already applied `take_committed()` to `kvs` (T08). `test_follower_keeps_leader_under_load` now writes back to back (about 470 writes per seed): a follower that reset its timer only on empty heartbeats passed the old network-only version and fails this one. **For T19:** if a lost write's entry is truncated and nothing new reaches its index yet, the write isn't decided until a later entry does, so it times out (504) rather than failing fast (503). `test_write_fails_when_its_entry_is_overwritten` commits a write first so that the 503 path really happens.
 
 ### T12 · Failure tests
 `tests/test_failures.py` (small cluster helpers allowed). `test_restart_does_not_double_vote`, minority leader can't commit,

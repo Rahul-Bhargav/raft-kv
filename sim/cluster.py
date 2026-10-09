@@ -58,6 +58,36 @@ class SimCluster:
             self.step()
         return cond()
 
+    # --- clients ---
+
+    def write(self, key: str, value: str, max_ticks: int = 1000) -> bool:
+        """Write key=value through the current leader, as a client would. True once it took effect.
+
+        Proposes on the leader, then runs until that node has applied the entry's index. True
+        only if what it applied there is our entry (same term), like the demo server's 200.
+        False if there is no leader, if a later leader overwrote the entry (503), or if it wasn't
+        applied within max_ticks (504). A write that returned False may still be applied later.
+        """
+        leader_id = self.leader()
+        if leader_id is None:
+            return False
+        node = self.nodes[leader_id]
+        assert node is not None  # leader() only returns live nodes...
+        proposed = node.propose({"op": "set", "key": key, "value": value})
+        assert proposed is not None  # ...that are leaders
+        self._collect(node)  # send its AppendEntries, as after every call into a node
+        index, term = proposed
+
+        def applied_there() -> bool:
+            current = self.nodes[leader_id]  # it may have crashed, or restarted as a new object
+            return current is not None and current.last_applied >= index
+
+        if not self.run_until(applied_there, max_ticks):
+            return False
+        # A committed entry never changes, so the term stored at `index` is the term applied.
+        # A different term means a later leader replaced our entry before it was committed.
+        return self.storages[leader_id].term_at(index) == term
+
     # --- observing ---
 
     def leader(self) -> str | None:
