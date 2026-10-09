@@ -9,12 +9,12 @@ in a few minutes and any agent can pick it up cold. The spec is in `DESIGN.md`, 
 
 | ID | Task | Depends on | Status |
 |---|---|---|---|
-| T01 | Project scaffold: uv, Python 3.12, pytest, empty packages | n/a | review |
-| T02 | `raft/messages.py`: message dataclasses + JSON round trip | T01 | review |
-| T03 | `raft/storage.py`: `Storage` protocol + `MemoryStorage` | T02 | review |
-| T04 | `raft/kv.py`: `KVStore` (set / delete / noop) | T01 | review |
-| T05 | `sim/network.py`: `SimNetwork` (delay, drop, dup, partition) | T02 | review |
-| **G1** | **Gate: foundations reviewed** | T02–T05 | waiting |
+| T01 | Project scaffold: uv, Python 3.12, pytest, empty packages | n/a | done |
+| T02 | `raft/messages.py`: message dataclasses + JSON round trip | T01 | done |
+| T03 | `raft/storage.py`: `Storage` protocol + `MemoryStorage` | T02 | done |
+| T04 | `raft/kv.py`: `KVStore` (set / delete / noop) | T01 | done |
+| T05 | `sim/network.py`: `SimNetwork` (delay, drop, dup, partition) | T02 | done |
+| **G1** | **Gate: foundations reviewed** | T02–T05 | approved |
 | T06 | `RaftNode` skeleton: roles, election timer, start election, step down on higher term (R2) | G1 | todo |
 | T07 | Voting and leadership: grant rules (R3, R4), count votes, heartbeats | T06 | todo |
 | T08 | `sim/cluster.py`: `SimCluster` + `tests/test_election.py` | T07 | todo |
