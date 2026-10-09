@@ -128,15 +128,18 @@ class RaftNode:
     def propose(self, command: dict) -> tuple[int, int] | None:
         """Leader only: add `command` to the log and start replicating it to every peer.
 
-        Returns the new entry's (index, term), or None if this node isn't the leader. The entry
-        isn't committed yet. The caller knows its write took effect only once take_committed()
-        hands out this index with this term; a later leader may overwrite it with another entry.
+        Returns the new entry's (index, term), or None if this node isn't the leader. The caller
+        knows its write took effect only once take_committed() hands out this index with this
+        term. Until then it may still be lost: a later leader can overwrite it with another entry.
         """
         if self.role != Role.LEADER:
             return None
         # Copy the command, so a caller changing its dict later can't change the log.
         # R1: the entry is saved before any AppendEntries carrying it is queued.
         self.storage.append([Entry(self.term, dict(command))])
+        # In a one-node cluster our own copy is already a majority, and no reply will ever
+        # come to trigger this. With peers, nothing new can be committed yet.
+        self._advance_commit_index()
         self._broadcast_append_entries()  # send it now rather than at the next heartbeat
         return self.storage.last_index(), self.term
 
@@ -147,8 +150,17 @@ class RaftNode:
         return messages
 
     def take_committed(self) -> list[tuple[int, Entry]]:
-        """(index, entry) pairs that became committed, in log order. Nothing commits until T10."""
-        return []
+        """(index, entry) for each entry committed since the last call, in log order.
+
+        last_applied marks how far entries have been handed out, so each goes out exactly once.
+        After a restart it starts again from 0, and the driver rebuilds its state machine.
+        """
+        committed = [
+            (index, self.storage.entry_at(index))
+            for index in range(self.last_applied + 1, self.commit_index + 1)
+        ]
+        self.last_applied = self.commit_index
+        return committed
 
     def take_events(self) -> list[str]:
         events, self._events = self._events, []
@@ -219,11 +231,16 @@ class RaftNode:
         self.role = Role.LEADER
         self.leader_id = self.node_id
         # Start optimistic: assume every peer's log matches ours, and back off on failure.
-        # Nothing is known to be replicated on any peer yet.
+        # Nothing is known to be replicated on any peer yet. Set before the noop below is
+        # appended, so the first AppendEntries to each peer carries it.
         self.next_index = {peer: self.storage.last_index() + 1 for peer in self.peers}
         self.match_index = {peer: 0 for peer in self.peers}
         self._event(f"became leader (term {self.term})")
-        self._broadcast_append_entries()  # announce the win now, before any follower times out
+        # R7: append a noop in our own term at once. R6 won't let us commit entries left by
+        # earlier leaders by counting copies, only by committing one of ours after them. Without
+        # the noop they'd wait for the next client write. propose() also sends it to every peer
+        # right away, which announces the win before any follower times out.
+        self.propose({"op": "noop"})
 
     def _broadcast_append_entries(self) -> None:
         """Send every peer an AppendEntries. It's also the heartbeat, so restart that countdown."""
@@ -267,6 +284,7 @@ class RaftNode:
         if msg.success:
             self.match_index[peer] = msg.match_index
             self.next_index[peer] = msg.match_index + 1
+            self._advance_commit_index()
         else:
             # The peer lacks our entry at next_index - 1. Back up one entry, or straight to
             # just past the peer's last entry if its log is shorter than that. Never below 1.
@@ -274,6 +292,21 @@ class RaftNode:
                 1, min(self.next_index[peer] - 1, msg.last_log_index + 1)
             )
             self._send_append_entries(peer)  # retry now rather than at the next heartbeat
+
+    def _advance_commit_index(self) -> None:
+        """Leader: commit up to the highest entry of our term that a majority stores (R6)."""
+        for n in range(self.storage.last_index(), self.commit_index, -1):  # highest first
+            if self.storage.term_at(n) != self.term:
+                # R6: never commit an earlier term's entry by counting copies. Even on a majority
+                # it can still be overwritten (Figure 8 in the Raft paper). Terms only go down
+                # from here towards the start of the log, so no lower entry qualifies either.
+                return
+            copies = 1 + sum(1 for match in self.match_index.values() if match >= n)  # 1: ours
+            if copies >= self._majority():
+                # This commits every entry before n too, earlier terms' included: any later
+                # leader will have entry n, and so everything before it.
+                self.commit_index = n
+                return
 
     def _on_append_entries(self, msg: AppendEntries) -> None:
         """Same term: the sender won this term's election. Follow it and take its entries."""
@@ -292,12 +325,17 @@ class RaftNode:
             self._reply_append_entries(msg.src, success=False, match_index=0)
             return
         self._append_new_entries(msg.prev_log_index, msg.entries)
+        # The last index this message covered. Our log now matches the leader's up to here. It
+        # may go further, but entries past this weren't checked against the leader's log, so
+        # they may be an old leader's entries that the current leader doesn't have.
+        last_new_entry = msg.prev_log_index + len(msg.entries)
+        # Commit what the leader has committed, but no further than last_new_entry: leader_commit
+        # is about the leader's entries, not about our unchecked ones. max(), because a delayed
+        # message can carry an older leader_commit.
+        self.commit_index = max(self.commit_index, min(msg.leader_commit, last_new_entry))
         # R1: the entries are saved before the reply that confirms them is queued. We confirm
-        # only what this message covered: our log may go further, but entries past this point
-        # weren't checked against the leader's log, so they may not be the leader's entries.
-        self._reply_append_entries(
-            msg.src, success=True, match_index=msg.prev_log_index + len(msg.entries)
-        )
+        # only what this message covered.
+        self._reply_append_entries(msg.src, success=True, match_index=last_new_entry)
 
     def _has_entry(self, index: int, term: int) -> bool:
         """Does our log have an entry at `index` from `term`? Index 0 (no entry) always matches."""
@@ -316,6 +354,7 @@ class RaftNode:
                 # and every entry after it are missing from the current leader's log. A leader
                 # has every committed entry (R3 and R6 together make sure of that), so these were
                 # never committed: delete them and take the leader's instead.
+                assert index > self.commit_index, f"{self.node_id}: deleting committed {index}"
                 self.storage.truncate_from(index)
                 self.storage.append(entries[offset:])
                 return

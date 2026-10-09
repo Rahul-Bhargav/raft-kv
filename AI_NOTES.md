@@ -61,3 +61,15 @@ The README's AI section is summarized from this file. Newest entries go at the b
 - **How it was verified:** 19 mutations of `node.py` in a scratch copy (calling `term_at` before the length check, truncating
   after `prev_log_index` on every message, confirming our last index instead of what the message covered, no stale-reply check,
   ignoring the backtracking hint, no floor at 1, no retry, and others). Every one failed at least one test.
+
+## 2026-10-08 · Commit (T10, written by Claude Opus)
+- **Finding that matters for the Figure 8 test (T13):** R7 appends the noop at once, and every AppendEntries runs to the end of
+  the leader's log, so every reply in a leader's term already covers its noop. R6's term check then never changes the outcome
+  on its own: removing it in a scratch copy failed only the unit test that feeds the leader hand-written replies. The check is
+  still required (a leader that sent entries in smaller batches, or had no R7, would hit Figure 8), so it stays, with that test.
+- **Judgment call:** a follower asserts it never deletes a committed entry. Correct Raft never does, so the assert can only
+  fire on a bug, and then it stops loudly instead of letting nodes quietly disagree.
+- **How it was verified:** 15 mutations of the commit code (no term check, not counting the leader's own copy, `>` for `>=`,
+  the lowest index instead of the highest, no noop, a follower committing to its last index instead of the last new entry,
+  no `max()`, committing on a failed check, `take_committed` not advancing, and others). Every one failed at least one test.
+  The 19 T09 mutations were rerun on the T10 code and all still fail.

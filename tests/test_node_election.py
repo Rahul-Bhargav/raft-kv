@@ -467,17 +467,18 @@ def test_new_leader_sends_every_peer_a_heartbeat_at_once():
     node = candidate(storage_with(1, 1))  # candidate in term 2; log ends at index 2, term 1
     node.receive(grant("n2", term=2))
     node.receive(grant("n3", term=2))
+    noop = Entry(2, {"op": "noop"})  # R7: appended on winning, so the first message carries it
     assert node.take_messages() == [
         AppendEntries(
-            "n1", peer, 2, prev_log_index=2, prev_log_term=1, entries=(), leader_commit=0
+            "n1", peer, 2, prev_log_index=2, prev_log_term=1, entries=(noop,), leader_commit=0
         )
         for peer in PEERS
     ]
 
 
-def test_new_leader_sets_next_index_past_its_log_and_match_index_to_zero():
+def test_new_leader_sets_next_index_past_the_log_it_won_with_and_match_index_to_zero():
     node = leader(storage_with(1, 1))
-    assert node.next_index == {peer: 3 for peer in PEERS}
+    assert node.next_index == {peer: 3 for peer in PEERS}  # 3 is the noop's index (R7)
     assert node.match_index == {peer: 0 for peer in PEERS}
 
 
@@ -488,7 +489,7 @@ def test_leader_sends_heartbeats_every_interval():
         assert node.take_messages() == []
         node.tick()
         sent = node.take_messages()
-        assert all(isinstance(m, AppendEntries) and m.entries == () for m in sent)
+        assert all(isinstance(m, AppendEntries) for m in sent)  # each repeats the unconfirmed noop
         assert [m.dst for m in sent] == PEERS
 
 

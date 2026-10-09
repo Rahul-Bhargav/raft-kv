@@ -20,7 +20,7 @@ in a few minutes and any agent can pick it up cold. The spec is in `DESIGN.md`, 
 | T08 | `sim/cluster.py`: `SimCluster` + `tests/test_election.py` | T07 | done |
 | **G2** | **Gate: leader election reviewed** | T06–T08 | approved |
 | T09 | Log replication: `propose`, consistency check, conflict truncation (R5), backtracking | G2 | review |
-| T10 | Commit: majority rule (R6), `leader_commit`, `take_committed`, noop on election (R7) | T09 | todo |
+| T10 | Commit: majority rule (R6), `leader_commit`, `take_committed`, noop on election (R7) | T09 | review |
 | T11 | `SimCluster.write` + KV apply + `tests/test_replication.py` | T10 | todo |
 | **G3** | **Gate: replication reviewed** | T09–T11 | waiting |
 | T12 | `tests/test_failures.py`: restart (R1), minority leader, heal (R2), no majority | G3 | todo |
@@ -124,6 +124,7 @@ check, R5 truncation, replies with `match_index`/`last_log_index`, and leader ba
 ### T10 · Commit
 `raft/node.py`, `tests/test_node_replication.py`. The leader advances `commit_index` with R6, followers follow `leader_commit`,
 `take_committed` hands out `(index, entry)` once, and the R7 noop is appended on election. Include `test_new_leader_commits_previous_entries`.
+*Notes:* the noop goes through `propose()`, so it's sent at once, and `next_index` (set just before it) makes the first AppendEntries carry it. `propose()` also runs the commit check, so a one-node cluster commits on its own. A follower asserts it never deletes a committed entry. Three T07 tests now expect the noop in a new leader's AppendEntries. **For T13:** with R7 and AppendEntries that always run to the end of the leader's log, every reply in a leader's term covers its noop, so R6's term check never changes the outcome on its own here (removing it fails only the unit test that uses hand-written replies). `test_figure8` can check that the old entry isn't committed early, but it will pass with or without the check.
 
 ### T11 · Replication through the cluster
 `sim/cluster.py`, `tests/test_replication.py`. `SimCluster.write` plus applying to the per-node `KVStore`. Tests: a write applies

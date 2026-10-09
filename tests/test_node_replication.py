@@ -399,3 +399,155 @@ def test_leader_makes_any_follower_log_a_copy_of_its_own(follower_log):
     assert leader_log[:10] == entries(*FIGURE_7_LEADER)  # a leader never changes its own log
     assert follower.storage.entries_from(1) == leader_log
     assert leader_node.match_index["n2"] == len(leader_log)
+
+
+# --- commit: the leader (R6) ---
+
+
+def test_leader_commits_an_entry_once_a_majority_stores_it():
+    node = synced_leader()  # leader of term 1
+    last = node.storage.last_index()
+    index, _ = node.propose({"op": "set", "key": "x", "value": "1"})
+    node.receive(confirmed("n2", node, index))
+    assert node.commit_index == last  # stored on n1 and n2: 2 of 5
+    assert node.take_committed() == []
+    node.receive(confirmed("n3", node, index))
+    assert node.commit_index == index  # n1, n2 and n3: 3 of 5, counting the leader itself
+    assert node.take_committed() == [(index, Entry(1, {"op": "set", "key": "x", "value": "1"}))]
+
+
+def test_leader_commits_the_highest_index_a_majority_stores():
+    node = synced_leader()
+    last = node.storage.last_index()
+    for key in "abc":
+        node.propose({"op": "set", "key": key, "value": "v"})
+    node.receive(confirmed("n2", node, last + 3))
+    node.receive(confirmed("n3", node, last + 1))
+    assert node.commit_index == last + 1  # 3 copies of last+1, only 2 of last+2 and last+3
+    node.receive(confirmed("n4", node, last + 2))
+    assert node.commit_index == last + 2
+    assert [index for index, _ in node.take_committed()] == [last + 1, last + 2]
+
+
+def test_leader_tells_followers_how_far_it_has_committed():
+    node = synced_leader()
+    index, _ = node.propose({"op": "set", "key": "x", "value": "1"})
+    node.receive(confirmed("n2", node, index))
+    node.receive(confirmed("n3", node, index))
+    node.take_messages()
+    tick(node, 10)  # the next heartbeat
+    assert {msg.leader_commit for msg in node.take_messages()} == {index}
+
+
+def test_leader_does_not_count_copies_of_an_earlier_term_entry():
+    # R6. n1 leads term 3. Its log has entries from terms 1 and 2, then its own noop at index 3.
+    # Entries 1-2 reach a majority first, but must not be committed by counting: an earlier
+    # term's entry can still be overwritten even when a majority has it (Figure 8 of the Raft
+    # paper, scripted in T13). Our own leader's AppendEntries always run to the end of its log,
+    # noop included, so real replies in term 3 never stop at index 2. The rule must not rely on
+    # that, so these replies are written by hand.
+    node = leader(storage_with(1, 2))  # wins term 3; noop at index 3
+    node.receive(confirmed("n2", node, 2))
+    node.receive(confirmed("n3", node, 2))
+    assert node.commit_index == 0  # entries 1-2 are on n1, n2 and n3, and still not committed
+    node.receive(confirmed("n2", node, 3))
+    assert node.commit_index == 0  # the noop is on 2 of 5
+    node.receive(confirmed("n3", node, 3))
+    assert node.commit_index == 3  # the noop commits, and entries 1-2 with it
+    assert node.take_committed() == [
+        (1, entries(1)[0]),
+        (2, entries(1, 2)[1]),
+        (3, Entry(3, {"op": "noop"})),
+    ]
+
+
+# --- R7: a new leader's noop ---
+
+
+def test_new_leader_appends_a_noop_in_its_own_term():
+    node = leader(storage_with(1, 1))  # wins term 2
+    assert node.storage.entries_from(1) == entries(1, 1) + [Entry(2, {"op": "noop"})]
+
+
+def test_new_leader_commits_previous_entries():
+    # R7. An old term-1 leader got entries 1-2 onto n1, n2 and n3, then crashed before any of
+    # them learned the entries were committed. n1 wins term 2. R6 won't let it commit entries
+    # 1-2 by counting copies, but its noop, once on a majority, commits them along with itself.
+    # Without the noop they would wait for the next client write.
+    nodes = {node_id: make_node(node_id, storage_with(1, 1)) for node_id in ["n1", "n2", "n3"]}
+    tick(nodes["n1"], 30)  # n1 times out and stands for term 2
+    exchange(nodes)  # votes, then the noop and the replies to it
+    n1 = nodes["n1"]
+    assert (n1.role, n1.term) == (Role.LEADER, 2)
+    expected = [(1, entries(1)[0]), (2, entries(1, 1)[1]), (3, Entry(2, {"op": "noop"}))]
+    assert n1.take_committed() == expected
+    tick(n1, 10)  # the next heartbeat tells the followers
+    exchange(nodes)
+    assert nodes["n2"].take_committed() == expected
+    assert nodes["n3"].take_committed() == expected
+
+
+# --- commit: the follower ---
+
+
+def test_follower_commits_up_to_leader_commit():
+    node = make_node()
+    log = entries(1, 1, 1)
+    node.receive(append_entries(1, prev_index=0, prev_term=0, new_entries=log, leader_commit=2))
+    assert node.commit_index == 2
+    assert node.take_committed() == [(1, log[0]), (2, log[1])]
+
+
+def test_follower_commits_no_further_than_the_message_checked():
+    # n1's entries 2 and 3 are from an old term-1 leader. The term-2 leader has committed up to
+    # 3, but this message only checked index 1, and the leader's entries 2 and 3 may be different
+    # ones. Committing to 3 would apply entries the leader doesn't have. (Our own leader always
+    # sends up to the end of its log, so it never sends this, but a follower can't rely on that.)
+    node = make_node(storage=storage_with(1, 1, 1))
+    node.receive(append_entries(2, prev_index=1, prev_term=1, leader_commit=3))
+    assert node.commit_index == 1
+    assert node.take_committed() == [(1, entries(1)[0])]
+
+
+def test_follower_commit_index_never_goes_back():
+    node = make_node()
+    node.receive(append_entries(1, 0, 0, new_entries=entries(1, 1, 1), leader_commit=3))
+    node.receive(append_entries(1, 0, 0, new_entries=entries(1), leader_commit=1))  # delayed
+    assert node.commit_index == 3
+
+
+def test_refused_append_entries_does_not_move_commit_index():
+    node = make_node(storage=storage_with(1, 1))
+    node.receive(append_entries(2, prev_index=2, prev_term=2, leader_commit=2))
+    assert node.commit_index == 0
+
+
+def test_follower_never_deletes_a_committed_entry():
+    # If the rest of Raft is right, an R5 conflict can never reach a committed entry. If it
+    # ever does, stop loudly rather than lose an entry that may already be applied.
+    node = make_node()
+    node.receive(append_entries(1, 0, 0, new_entries=entries(1, 1), leader_commit=2))
+    with pytest.raises(AssertionError, match="deleting committed"):
+        node.receive(append_entries(2, prev_index=1, prev_term=1, new_entries=entries(2, start=2)))
+
+
+# --- take_committed ---
+
+
+def test_take_committed_hands_out_each_entry_once_in_order():
+    node = make_node()
+    log = entries(1, 1, 1, 1)
+    node.receive(append_entries(1, prev_index=0, prev_term=0, new_entries=log, leader_commit=2))
+    assert node.take_committed() == [(1, log[0]), (2, log[1])]
+    assert node.take_committed() == []
+    node.receive(append_entries(1, prev_index=4, prev_term=1, leader_commit=4))  # a heartbeat
+    assert node.take_committed() == [(3, log[2]), (4, log[3])]
+    assert node.last_applied == 4
+
+
+def test_single_node_cluster_commits_at_once():
+    node = RaftNode("n1", [], MemoryStorage(), random.Random(0), FIXED)
+    tick(node, 30)  # elects itself, and its noop is already on a majority: itself
+    assert node.take_committed() == [(1, Entry(1, {"op": "noop"}))]
+    assert node.propose({"op": "set", "key": "x", "value": "1"}) == (2, 1)
+    assert node.take_committed() == [(2, Entry(1, {"op": "set", "key": "x", "value": "1"}))]
