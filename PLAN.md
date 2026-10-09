@@ -15,10 +15,10 @@ in a few minutes and any agent can pick it up cold. The spec is in `DESIGN.md`, 
 | T04 | `raft/kv.py`: `KVStore` (set / delete / noop) | T01 | done |
 | T05 | `sim/network.py`: `SimNetwork` (delay, drop, dup, partition) | T02 | done |
 | **G1** | **Gate: foundations reviewed** | T02–T05 | approved |
-| T06 | `RaftNode` skeleton: roles, election timer, start election, step down on higher term (R2) | G1 | review |
-| T07 | Voting and leadership: grant rules (R3, R4), count votes, heartbeats | T06 | review |
-| T08 | `sim/cluster.py`: `SimCluster` + `tests/test_election.py` | T07 | review |
-| **G2** | **Gate: leader election reviewed** | T06–T08 | waiting |
+| T06 | `RaftNode` skeleton: roles, election timer, start election, step down on higher term (R2) | G1 | done |
+| T07 | Voting and leadership: grant rules (R3, R4), count votes, heartbeats | T06 | done |
+| T08 | `sim/cluster.py`: `SimCluster` + `tests/test_election.py` | T07 | done |
+| **G2** | **Gate: leader election reviewed** | T06–T08 | approved |
 | T09 | Log replication: `propose`, consistency check, conflict truncation (R5), backtracking | G2 | todo |
 | T10 | Commit: majority rule (R6), `leader_commit`, `take_committed`, noop on election (R7) | T09 | todo |
 | T11 | `SimCluster.write` + KV apply + `tests/test_replication.py` | T10 | todo |
