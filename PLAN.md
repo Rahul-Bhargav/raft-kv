@@ -15,7 +15,7 @@ in a few minutes and any agent can pick it up cold. The spec is in `DESIGN.md`, 
 | T04 | `raft/kv.py`: `KVStore` (set / delete / noop) | T01 | done |
 | T05 | `sim/network.py`: `SimNetwork` (delay, drop, dup, partition) | T02 | done |
 | **G1** | **Gate: foundations reviewed** | T02–T05 | approved |
-| T06 | `RaftNode` skeleton: roles, election timer, start election, step down on higher term (R2) | G1 | todo |
+| T06 | `RaftNode` skeleton: roles, election timer, start election, step down on higher term (R2) | G1 | review |
 | T07 | Voting and leadership: grant rules (R3, R4), count votes, heartbeats | T06 | todo |
 | T08 | `sim/cluster.py`: `SimCluster` + `tests/test_election.py` | T07 | todo |
 | **G2** | **Gate: leader election reviewed** | T06–T08 | waiting |
@@ -100,6 +100,7 @@ partition and heal, and the same seed producing the same delivery sequence.
 timeout, then becomes a candidate, increments the term, votes for itself (saved first), and sends `RequestVote` to all peers.
 R2: a higher term in any message → follower. Lower-term messages are ignored.
 **Done when:** unit tests drive a single node by calling `tick()`/`receive()` and asserting on `take_messages()`.
+*Notes:* all term logic sits at the top of `receive()`, so handlers can assume `msg.term == self.term`. A stale `AppendEntries` gets `success=False, match_index=0, last_log_index=<ours>`. Adopting a higher term does not reset the election timer (R4 doesn't list it). `RaftConfig` is `frozen=True` because its default instance is shared by every node. Events: `started election (term N)`, `became follower (term N)` (only on a role change).
 
 ### T07 · Voting and leadership
 `raft/node.py`, `tests/test_node_election.py`. Handle `RequestVote`: R3 (one vote per term, up-to-date check) and R4 (reset the timer
