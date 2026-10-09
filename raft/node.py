@@ -1,9 +1,10 @@
 """One Raft node: the consensus algorithm itself. Pure logic, no I/O.
 
-Time arrives as tick() and messages as receive(msg). Nothing is sent directly: messages and events
-are queued, and the driver collects them with take_*() after every call. Because the driver sends
-only after the call returns, anything saved to storage during the call is durable before any
-message that depends on it leaves the node (rule R1). Rule names R1–R7 refer to DESIGN.md.
+Time arrives as tick() and messages as receive(msg). Messages are never sent from inside the node:
+they're queued, and the driver collects them with take_*() and sends them after the call returns.
+By then, everything the call saved (term, vote, log entries) is already stored. So a crash can never
+leave another node holding a promise this node has forgotten, such as "I voted for you" or "I have
+entry 7". That's rule R1. Rule names R1-R7 refer to DESIGN.md.
 """
 
 import random
