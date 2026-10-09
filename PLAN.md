@@ -17,7 +17,7 @@ in a few minutes and any agent can pick it up cold. The spec is in `DESIGN.md`, 
 | **G1** | **Gate: foundations reviewed** | T02–T05 | approved |
 | T06 | `RaftNode` skeleton: roles, election timer, start election, step down on higher term (R2) | G1 | review |
 | T07 | Voting and leadership: grant rules (R3, R4), count votes, heartbeats | T06 | review |
-| T08 | `sim/cluster.py`: `SimCluster` + `tests/test_election.py` | T07 | todo |
+| T08 | `sim/cluster.py`: `SimCluster` + `tests/test_election.py` | T07 | review |
 | **G2** | **Gate: leader election reviewed** | T06–T08 | waiting |
 | T09 | Log replication: `propose`, consistency check, conflict truncation (R5), backtracking | G2 | todo |
 | T10 | Commit: majority rule (R6), `leader_commit`, `take_committed`, noop on election (R7) | T09 | todo |
@@ -113,6 +113,7 @@ Candidates step down on an AppendEntries from a current-term leader. Leave the R
 `sim/cluster.py`, `tests/test_election.py`. `SimCluster` as in DESIGN.md (`write` comes in T11). Tests:
 exactly one leader is elected within a bound, re-election after crashing the leader, split votes resolve across many seeds,
 `test_outdated_log_cannot_win` (set up logs through `storages` directly), `test_follower_keeps_leader_under_load`.
+*Notes:* `step()` collects outputs after every call and already applies `take_committed()` to `kvs` (a no-op until T10); `write` is T11. Each node gets its own `Random` seeded from the cluster's, and `events` keeps `(tick, node, event)`. Test bounds are about 2x the worst case measured over their seeds; split votes use timeouts in [30, 35) so most seeds go past term 1. Spec gap: "under load" is 50% duplication with delays up to 8 ticks for now, and T11 should add client writes to that test.
 
 ### T09 · Log replication
 `raft/node.py`, `tests/test_node_replication.py`. `propose` (leader only), AppendEntries carrying entries, the follower consistency

@@ -33,10 +33,16 @@ The README's AI section is summarized from this file. Newest entries go at the b
 - **Also from review:** I asked what `frozen=True, slots=True` do and why dataclasses instead of plain classes, and asked for each
   message to document when it's used. Both are now in `raft/messages.py`'s docstrings.
 
-## 2026-10-08 · Leader election (T06–T07, written by Claude Opus)
+## 2026-10-08 · Leader election (T06–T08, written by Claude Opus)
 - **Judgment call on R4:** the election timer is reset only on the three events R4 lists. Two tempting extra resets were left
   out on purpose: on adopting a higher term (a candidate with an outdated log could then keep every timer from expiring, so
   nobody electable would ever stand), and when a leader steps down (its paused countdown resumes instead). Both have unit tests.
 - **How it was verified:** besides the unit tests, each election rule was broken on purpose in a scratch copy (re-grant refused,
   log check comparing index first, `>` instead of `>=`, timer reset on a refused vote, majority off by one, votes not cleared
   between elections, and others) and the suite was rerun. Every mutation failed at least one test.
+- **Spec gap:** `test_follower_keeps_leader_under_load` (R4) names a load, but there are no client writes before T11. For now the
+  load is the network (half of all messages duplicated, delays up to 8 ticks, no drops), so any election after the first is a
+  timer bug. T11 should add writes to it.
+- **Test bounds are measured, not guessed:** each "elected within N ticks" bound is about twice the worst case seen over the
+  test's seeds. The split-vote test narrows timeouts to [30, 35) and checks that most seeds really did split, so it can't pass
+  without exercising the tie-break.
