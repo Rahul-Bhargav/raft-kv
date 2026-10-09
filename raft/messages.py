@@ -4,17 +4,7 @@ There are two exchanges, both one-way (a reply is a separate message, not a retu
   - Leader election:   candidate --RequestVote-->   every node --RequestVoteReply-->   candidate
   - Normal operation:  leader    --AppendEntries--> each follower --AppendEntriesReply--> leader
 
-Every class here is `@dataclass(frozen=True, slots=True)`:
-  - dataclass: generates __init__, __eq__ and __repr__ from the field list. Equality is by value
-    and by class, so RequestVoteReply("n2", "n1", 4, True) == the same message built anywhere
-    else, but never equals a different message type that happens to hold the same values.
-    asdict() also gives us serialization for free. A plain class would need all of that by hand.
-  - frozen=True: fields can't be reassigned after creation. A message can sit in the simulated
-    network, or be duplicated, while the sender keeps running, and nobody can change it in flight.
-    Frozen is shallow: Entry.command is still a mutable dict, which is why to_dict/from_dict copy it.
-  - slots=True: fields are stored in fixed slots instead of a per-instance __dict__, so objects are
-    smaller and attribute access is slightly faster. This matters a little for Entry, since logs hold
-    many of them. For messages it's a minor nicety.
+Every class here is `@dataclass(frozen=True, slots=True)`.
 """
 
 from dataclasses import asdict, dataclass
