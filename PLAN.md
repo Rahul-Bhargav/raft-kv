@@ -25,7 +25,7 @@ in a few minutes and any agent can pick it up cold. The spec is in `DESIGN.md`, 
 | **G3** | **Gate: replication reviewed** | T09–T11 | approved |
 | T12 | `tests/test_failures.py`: restart (R1), minority leader, heal (R2), no majority | G3 | review |
 | T13a | `RaftConfig.max_entries_per_append`: optional cap on entries per AppendEntries | T12 | review |
-| T13 | `test_figure8`: scripted Figure 8 scenario (R6), using a small batch cap | T13a | todo |
+| T13 | `test_figure8`: scripted Figure 8 scenario (R6), using a small batch cap | T13a | review |
 | T14 | `tests/invariants.py`: the 5 invariants, run after every simulator step | T12 | todo |
 | T15 | `tests/test_fuzz.py`: randomized fault schedules over many seeds | T14 | todo |
 | **G4** | **Gate: correctness evidence complete** | T12–T15 | waiting |
@@ -153,6 +153,7 @@ who gets which entries), using `max_entries_per_append=1` so a follower can conf
 Assert that a previous-term entry replicated on a majority is **not** reported committed until a current-term entry commits.
 **Required evidence:** in a scratch copy, remove R6's term check from `_advance_commit_index` and confirm `test_figure8` fails.
 Test-only helpers in `sim/` are fine. Don't change node logic to make the test easier.
+*Notes:* `test_figure8` scripts stages (a)-(d) with the paper's own terms (n1-n5 for S1-S5; each new leader's R7 noop stands in for a client entry) and checks each stage's log picture; `test_figure8_current_term_entry_commits_the_old_one` is the (e) branch. Both use 1000-tick timeouts and a cap of 1, over 10 seeds (the seed only moves message delays). No new sim helpers. **Evidence:** with R6's term check removed in a scratch copy, both tests fail on every seed at stage (c). `test_figure8`'s per-tick checker reports `tick 49: n1 counts entry 2, from term 2, as committed (R6)` (seed 0), and the (e) test fails the stage-(c) assert. Without the cap, stage (c) never happens: n3 gets entries 2 and 3 in one message. **For T14:** the end state alone doesn't show this damage. With R6 and the test's own R6 checks both removed, `test_figure8` still passes, yet n1 applied index 2 from term 2 before its crash and from term 3 after it. The State Machine Safety invariant only catches that if it records what each node applied across restarts.
 
 ### T14 · Invariants
 `tests/invariants.py`, wired into every `SimCluster` test (fixture or `checkers`). The 5 invariants from DESIGN.md, each with

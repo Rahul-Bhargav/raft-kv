@@ -114,3 +114,14 @@ The README's AI section is summarized from this file. Newest entries go at the b
 - **R6 now has a unit test with real replies:** with a cap of 1 or 2, followers confirm 20 term-1 entries long before the new
   leader's noop, and the leader's commit index must stay at 0 until the noop is on 3 of 5. Removing R6's term check in a scratch
   copy now fails that test, not only the one with hand-written replies. Ignoring the cap or going one past it fails the cap tests.
+
+## 2026-10-10 · Figure 8 (T13, written by Claude Opus)
+- **The scenario, scripted:** `test_figure8` replays Figure 8 of the Raft paper with the same nodes and term numbers (S1 leads
+  term 2, S5 term 3, S1 term 4, S5 term 5), using partitions, crashes and `time_out()`, and asserts each stage's log picture.
+  The batch cap of 1 is what makes stage (c) possible: without it, n3 receives the old entry and the new leader's noop in one
+  message, and the moment R6 guards never happens.
+- **Required evidence:** with R6's term check removed in a scratch copy, `test_figure8` fails on every seed at stage (c):
+  `tick 49: n1 counts entry 2, from term 2, as committed (R6)`. The (e) test fails too.
+- **Where the AI checked its own test:** I also removed the test's own R6 checks along with R6. The end state still looked
+  fine (every node ends with n5's entries), so the test would have passed, yet n1 had applied index 2 twice, from term 2
+  before its crash and from term 3 after. The per-tick checker is what catches it. This is noted for T14's invariants.

@@ -7,9 +7,11 @@ Scripted tests use SCRIPTED: election timeouts far longer than the test, so no n
 election on its own. The test picks who stands, and when, with SimCluster.time_out().
 """
 
+from dataclasses import replace
+
 import pytest
 
-from raft.node import RaftConfig, Role
+from raft.node import RaftConfig, RaftNode, Role
 from sim.cluster import SimCluster
 
 # Bounds, in ticks, with about 2x headroom over the worst case measured over these seeds.
@@ -235,3 +237,180 @@ def test_restarting_one_node_restores_progress():
         cluster.run(FOLLOWER_APPLY_BOUND)
         for node_id in [crashed[0], *survivors]:
             assert cluster.kvs[node_id].data == {"a": "1", "b": "2"}, f"seed {seed}, {node_id}"
+
+
+# --- R6: Figure 8 of the Raft paper ---
+#
+# Each row is one node's log, and each number is the term of the entry at that index. Stages
+# (a)-(e) match the paper's, with n1-n5 standing for S1-S5 and the same term numbers. Our entries
+# are each new leader's R7 noop, standing in for the paper's client entries. L = leader,
+# x = crashed. Entry 1 is committed on every node before (a).
+#
+#             (a)      (b)       (c)        (d)        (e), instead of (d)
+#   index:    1 2      1 2       1 2 3      1 2 3      1 2 3
+#   n1        1 2 L    1 2 x     1 2 4 L    1 3 5      1 2 4 L
+#   n2        1 2      1 2       1 2 4      1 3 5      1 2 4
+#   n3        1        1         1 2        1 3 5      1 2 4
+#   n4        1        1         1          1 3 5      1
+#   n5        1        1 3 L,x   1 3 x      1 3 5 L    1 3 x
+#
+# (a) n1 leads term 2. Its entry 2 reaches only n2.
+# (b) n1 crashes. n5 wins term 3 (votes: n3, n4, itself). Its entry 2 reaches nobody; it crashes.
+# (c) n1 restarts and wins term 4. It copies its term-2 entry to n3: now on 3 of 5, a majority.
+#     It must NOT count as committed (R6), because of what can happen next:
+# (d) n1 crashes. n5 wins term 5: its log ends in term 3, later than n3's and n4's (R3). Its entry 2
+#     replaces the term-2 entry everywhere, n1's too once it restarts. A node that had applied the
+#     term-2 entry would have applied two different entries at index 2.
+# (e) Or: n1's term-4 entry reaches n3 before any crash. That entry is from n1's own term and on
+#     a majority, so it commits, and entry 2 with it. n5 can't win any more: n2 and n3 now end
+#     their logs in term 4, later than n5's term 3, so they refuse it (R3).
+#
+# Without a batch cap, n1's message to n3 in (c) would carry entries 2 and 3 together, and the
+# moment in (c) where a majority has the old entry but not n1's new one would never happen.
+FIGURE_8 = replace(SCRIPTED, max_entries_per_append=1)
+# One or two entries reaching a follower, one entry per heartbeat: measured worst 16 ticks.
+STAGE_BOUND = 35
+# After (d), n5 overwrites entries 2-3 on three followers by backing up: measured worst 33.
+CATCH_UP_BOUND = 70
+
+
+def live(cluster: SimCluster) -> list[RaftNode]:
+    return [node for node in cluster.nodes.values() if node is not None]
+
+
+def log_terms(cluster: SimCluster) -> dict[str, list[int]]:
+    """Each node's log as the term of each entry: one row of the Figure 8 picture per node."""
+    return {n: [entry.term for entry in s.entries_from(1)] for n, s in cluster.storages.items()}
+
+
+def figure_8_up_to_c(cluster: SimCluster) -> None:
+    """Script stages (a)-(c) of Figure 8, checking each stage's picture as it goes."""
+    # Before (a): n2 leads term 1, and entry 1 commits on every node.
+    assert campaign(cluster, "n2")
+    assert cluster.run_until(lambda: all(n.commit_index == 1 for n in live(cluster)), STAGE_BOUND)
+
+    # (a) n1 wins term 2. Its noop (entry 2) is on its way to everyone, so split the network
+    # right away: only n2 gets it.
+    assert campaign(cluster, "n1")
+    cluster.partition({"n1", "n2"}, {"n3", "n4", "n5"})
+    assert cluster.run_until(lambda: cluster.nodes["n1"].match_index["n2"] == 2, STAGE_BOUND)
+    assert log_terms(cluster) == {"n1": [1, 2], "n2": [1, 2], "n3": [1], "n4": [1], "n5": [1]}
+
+    # (b) n1 crashes. n5 wins term 3 with n3's and n4's votes, then is cut off before its noop
+    # (its entry 2) reaches anyone, and crashes.
+    cluster.crash("n1")
+    assert campaign(cluster, "n5")
+    cluster.partition({"n1", "n2"}, {"n3", "n4"})  # n5, not named, is alone
+    cluster.crash("n5")
+    assert log_terms(cluster)["n5"] == [1, 3]
+
+    # (c) n1 restarts, next to n2 and n3. Its first try, in term 3, fails: n3 already voted for
+    # n5 in term 3 (R3: one vote per term). It wins term 4. Its noop is entry 3. n3 lacks entry
+    # 2, so n1 backs up and sends it entry 2 alone (the cap is 1), and n3 confirms it.
+    cluster.restart("n1")
+    cluster.partition({"n1", "n2", "n3"}, {"n4"})
+    assert not campaign(cluster, "n1")
+    assert campaign(cluster, "n1")
+    assert cluster.nodes["n1"].term == 4
+    assert cluster.run_until(lambda: cluster.nodes["n1"].match_index["n3"] == 2, STAGE_BOUND)
+    assert log_terms(cluster) == {
+        "n1": [1, 2, 4],
+        "n2": [1, 2, 4],
+        "n3": [1, 2],
+        "n4": [1],
+        "n5": [1, 3],
+    }
+    # The term-2 entry is on n1, n2 and n3, a majority, and still nobody counts it committed.
+    # (n1's commit index is 0: it restarted, and has committed nothing in term 4 yet.)
+    assert all(node.commit_index <= 1 for node in live(cluster)), "R6: entry 2 was committed"
+
+
+@pytest.mark.parametrize("seed", range(10))  # the seed changes only the message delays
+def test_figure8(seed: int) -> None:
+    """R6: an earlier term's entry on a majority is not committed, because it can still be lost.
+
+    Stages (a)-(c) and (d) of the diagram above. By (c), n1 leads term 4, and its entry from term 2
+    is on a majority. Counting copies would call it committed, and n1 would apply it. Then in (d)
+    n1 crashes, and n5 wins term 5 and replaces that entry on every node with its own from term 3.
+    R6 prevents the damage: a leader commits by counting copies only entries of its own term.
+    We check: at no tick does any node count the term-2 entry as committed, and in the end every
+    node has n5's entry at index 2 and has committed it.
+    """
+    cluster = SimCluster(seed=seed, config=FIGURE_8)
+
+    def never_commits_the_term_2_entry(c: SimCluster) -> None:
+        for node in live(c):
+            assert not (node.commit_index >= 2 and node.storage.term_at(2) == 2), (
+                f"tick {c.now}: {node.node_id} counts entry 2, from term 2, as committed (R6)"
+            )
+
+    cluster.checkers.append(never_commits_the_term_2_entry)
+    figure_8_up_to_c(cluster)
+
+    # (d) n1 crashes, and n5 comes back. Its first try, in term 4, fails: n2 and n3 already voted
+    # for n1 in term 4. In term 5, n3 and n4 vote for it: its log ends in term 3, later than
+    # theirs (R3). n2 refuses: its log ends in term 4.
+    cluster.crash("n1")
+    cluster.restart("n5")
+    cluster.heal()
+    assert not campaign(cluster, "n5")
+    assert campaign(cluster, "n5")
+    assert cluster.nodes["n5"].term == 5
+
+    # n5's entries replace the term-2 entry and everything after it (R5), and they commit.
+    def has_n5s_log(node_id: str) -> bool:
+        node = cluster.nodes[node_id]
+        return log_terms(cluster)[node_id] == [1, 3, 5] and node.commit_index == 3
+
+    others = ["n2", "n3", "n4"]
+    assert cluster.run_until(lambda: all(has_n5s_log(n) for n in others), CATCH_UP_BOUND)
+    cluster.restart("n1")  # n1's copy of the term-2 entry goes too
+    assert cluster.run_until(lambda: has_n5s_log("n1"), CATCH_UP_BOUND)
+    entry_2 = cluster.storages["n5"].entry_at(2)
+    assert all(cluster.storages[n].entry_at(2) == entry_2 for n in cluster.ids)
+
+
+@pytest.mark.parametrize("seed", range(10))
+def test_figure8_current_term_entry_commits_the_old_one(seed: int) -> None:
+    """R6's other half: a current-term entry on a majority commits the earlier entries with it.
+
+    Stages (a)-(c) and (e) of the diagram above. From (c), n1's next heartbeat brings its term-4
+    entry to n3. It's now on a majority, so n1 commits index 3, and index 2 with it. That's safe:
+    n2 and n3 now end their logs in term 4, so n5, whose log ends in term 3, can never win again,
+    and any future leader has the term-4 entry and everything before it.
+    We check: n1's commit index jumps from 0 straight to 3 (index 2 is never committed on its
+    own), n5 loses every election it tries, and after n2 wins, every node keeps the term-2 entry.
+    """
+    cluster = SimCluster(seed=seed, config=FIGURE_8)
+    figure_8_up_to_c(cluster)
+
+    n1 = cluster.nodes["n1"]
+    commit_indexes = {n1.commit_index}
+
+    def record_n1s_commit_index(c: SimCluster) -> None:
+        commit_indexes.add(n1.commit_index)
+
+    cluster.checkers.append(record_n1s_commit_index)
+    assert cluster.run_until(lambda: n1.commit_index == 3, STAGE_BOUND)
+    cluster.checkers.remove(record_n1s_commit_index)
+    assert commit_indexes == {0, 3}  # entries 2 and 3 were committed in the same step
+    assert log_terms(cluster)["n3"] == [1, 2, 4]
+
+    # n1 crashes, and n5 comes back. It loses in term 4 (n2 and n3 voted for n1 in term 4), and
+    # in term 5 (their logs end in term 4, later than its term 3). Only n4 votes for it.
+    cluster.crash("n1")
+    cluster.restart("n5")
+    cluster.heal()
+    assert not campaign(cluster, "n5")
+    assert not campaign(cluster, "n5")
+    assert campaign(cluster, "n2")  # term 6
+
+    cluster.restart("n1")
+    expected = [1, 2, 4, 6]  # n5's term-3 entry is the one replaced this time
+
+    def caught_up() -> bool:
+        return all(t == expected for t in log_terms(cluster).values()) and all(
+            node.commit_index == 4 for node in live(cluster)
+        )
+
+    assert cluster.run_until(caught_up, CATCH_UP_BOUND)
