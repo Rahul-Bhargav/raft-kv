@@ -4,12 +4,14 @@ The node under test is "n1". In the follower tests, n1 gets hand-written AppendE
 which plays the leader.
 """
 
+import math
 import random
 from collections.abc import Sequence
+from dataclasses import replace
 
 import pytest
 
-from raft.messages import AppendEntries, AppendEntriesReply, Entry, RequestVoteReply
+from raft.messages import AppendEntries, AppendEntriesReply, Entry, Message, RequestVoteReply
 from raft.node import RaftConfig, RaftNode, Role
 from raft.storage import MemoryStorage
 
@@ -56,9 +58,11 @@ class RecordingStorage(MemoryStorage):
         super().truncate_from(index)
 
 
-def make_node(node_id: str = "n1", storage: MemoryStorage | None = None) -> RaftNode:
+def make_node(
+    node_id: str = "n1", storage: MemoryStorage | None = None, config: RaftConfig = FIXED
+) -> RaftNode:
     peers = [other for other in IDS if other != node_id]
-    return RaftNode(node_id, peers, storage or MemoryStorage(), random.Random(0), FIXED)
+    return RaftNode(node_id, peers, storage or MemoryStorage(), random.Random(0), config)
 
 
 def tick(node: RaftNode, n: int) -> None:
@@ -83,9 +87,9 @@ def append_entries(
     )
 
 
-def leader(storage: MemoryStorage | None = None) -> RaftNode:
+def leader(storage: MemoryStorage | None = None, config: RaftConfig = FIXED) -> RaftNode:
     """n1 right after winning the election that follows its stored term, outputs taken."""
-    node = make_node(storage=storage)
+    node = make_node(storage=storage, config=config)
     tick(node, 30)
     node.receive(RequestVoteReply("n2", "n1", node.term, granted=True))
     node.receive(RequestVoteReply("n3", "n1", node.term, granted=True))
@@ -115,10 +119,13 @@ def synced_leader(storage: MemoryStorage | None = None) -> RaftNode:
     return node
 
 
-def exchange(nodes: dict[str, RaftNode], limit: int = 1000) -> None:
+def exchange(
+    nodes: dict[str, RaftNode], limit: int = 1000, delivered: list[Message] | None = None
+) -> None:
     """Deliver queued messages between `nodes`, oldest first, until there are none left.
 
     A perfect network: nothing is lost, delayed or reordered. Messages to other nodes are dropped.
+    Every message delivered is also added to `delivered`, if given.
     """
     queue = [msg for node in nodes.values() for msg in node.take_messages()]
     for _ in range(limit):
@@ -126,6 +133,8 @@ def exchange(nodes: dict[str, RaftNode], limit: int = 1000) -> None:
             return
         msg = queue.pop(0)
         if msg.dst in nodes:
+            if delivered is not None:
+                delivered.append(msg)
             nodes[msg.dst].receive(msg)
             queue.extend(nodes[msg.dst].take_messages())
     raise AssertionError(f"still exchanging after {limit} messages")
@@ -443,9 +452,10 @@ def test_leader_does_not_count_copies_of_an_earlier_term_entry():
     # R6. n1 leads term 3. Its log has entries from terms 1 and 2, then its own noop at index 3.
     # Entries 1-2 reach a majority first, but must not be committed by counting: an earlier
     # term's entry can still be overwritten even when a majority has it (Figure 8 of the Raft
-    # paper, scripted in T13). Our own leader's AppendEntries always run to the end of its log,
-    # noop included, so real replies in term 3 never stop at index 2. The rule must not rely on
-    # that, so these replies are written by hand.
+    # paper, scripted in T13). With no batch cap, our own leader's AppendEntries always run to the
+    # end of its log, noop included, so real replies in term 3 never stop at index 2. The rule must
+    # not rely on that, so these replies are written by hand. (With a cap they can stop there: see
+    # test_batch_cap_still_replicates_a_long_log_to_lagging_followers.)
     node = leader(storage_with(1, 2))  # wins term 3; noop at index 3
     node.receive(confirmed("n2", node, 2))
     node.receive(confirmed("n3", node, 2))
@@ -501,8 +511,9 @@ def test_follower_commits_up_to_leader_commit():
 def test_follower_commits_no_further_than_the_message_checked():
     # n1's entries 2 and 3 are from an old term-1 leader. The term-2 leader has committed up to
     # 3, but this message only checked index 1, and the leader's entries 2 and 3 may be different
-    # ones. Committing to 3 would apply entries the leader doesn't have. (Our own leader always
-    # sends up to the end of its log, so it never sends this, but a follower can't rely on that.)
+    # ones. Committing to 3 would apply entries the leader doesn't have. (With no batch cap, our
+    # own leader always sends up to the end of its log, so leader_commit never reaches past what a
+    # message covers. With max_entries_per_append it can, and a follower can't rely on either.)
     node = make_node(storage=storage_with(1, 1, 1))
     node.receive(append_entries(2, prev_index=1, prev_term=1, leader_commit=3))
     assert node.commit_index == 1
@@ -551,3 +562,57 @@ def test_single_node_cluster_commits_at_once():
     assert node.take_committed() == [(1, Entry(1, {"op": "noop"}))]
     assert node.propose({"op": "set", "key": "x", "value": "1"}) == (2, 1)
     assert node.take_committed() == [(2, Entry(1, {"op": "set", "key": "x", "value": "1"}))]
+
+
+# --- batch cap: max_entries_per_append ---
+
+
+def capped(cap: int) -> RaftConfig:
+    return replace(FIXED, max_entries_per_append=cap)
+
+
+def test_batch_cap_limits_the_entries_in_one_append_entries():
+    node = leader(storage_with(1, 1, 1, 1, 1), capped(2))  # term 2; its noop is entry 6
+    node.receive(refused("n2", node, last_log_index=0))  # n2's log is empty: retry from 1
+    [retry] = node.take_messages()
+    assert (retry.prev_log_index, retry.entries) == (0, tuple(entries(1, 1)))  # 2 of the 6
+    node.receive(confirmed("n2", node, 2))
+    assert node.take_messages() == []  # a success doesn't send the next batch by itself...
+    tick(node, 10)  # ...the next heartbeat does
+    sent = {msg.dst: msg for msg in node.take_messages()}
+    assert (sent["n2"].prev_log_index, sent["n2"].entries) == (2, tuple(entries(1, 1, start=3)))
+    assert (sent["n3"].prev_log_index, sent["n3"].entries) == (5, (Entry(2, {"op": "noop"}),))
+
+
+@pytest.mark.parametrize("cap", [1, 2])
+def test_batch_cap_still_replicates_a_long_log_to_lagging_followers(cap):
+    # n1 has 20 entries from term 1 and wins term 2, so its noop is entry 21. n2 and n3 have
+    # nothing. With at most `cap` entries per message, one batch per heartbeat, both still end up
+    # with an exact copy. The 20 old entries are on 3 of 5 nodes long before the noop is, and real
+    # replies now confirm them without it. R6 still commits nothing until the noop is on 3 of 5.
+    config = capped(cap)
+    n1 = leader(storage_with(*[1] * 20), config)
+    nodes = {"n1": n1} | {peer: make_node(peer, MemoryStorage(), config) for peer in ["n2", "n3"]}
+    leader_log = n1.storage.entries_from(1)
+    delivered: list[Message] = []
+    commit_after_each_heartbeat = []
+    while any(nodes[peer].storage.entries_from(1) != leader_log for peer in ["n2", "n3"]):
+        assert len(commit_after_each_heartbeat) < 50, "the followers stopped catching up"
+        tick(n1, 10)
+        exchange(nodes, delivered=delivered)
+        commit_after_each_heartbeat.append(n1.commit_index)
+
+    batches = [len(msg.entries) for msg in delivered if isinstance(msg, AppendEntries)]
+    assert max(batches) == cap
+    # The first heartbeat fails (the followers lack entry 20), and its retry carries the first
+    # batch. Every later heartbeat carries the next one.
+    heartbeats = math.ceil(21 / cap)
+    assert commit_after_each_heartbeat == [0] * (heartbeats - 1) + [21]
+    tick(n1, 10)  # the next heartbeat tells the followers
+    exchange(nodes)
+    assert [nodes[peer].commit_index for peer in ["n2", "n3"]] == [21, 21]
+
+
+def test_batch_cap_must_be_at_least_one():
+    with pytest.raises(ValueError):
+        RaftConfig(max_entries_per_append=0)

@@ -103,3 +103,14 @@ The README's AI section is summarized from this file. Newest entries go at the b
   `test_minority_leader_cannot_commit` shows.
 - **Other mutations caught:** a majority of 2 instead of 3 fails all four partition/no-majority tests, and a leader that
   ignores higher terms, or adopts them without stepping down, fails `test_stale_leader_steps_down`.
+
+## 2026-10-10 · Batch cap (T13a, written by Claude Opus)
+- **Why it exists (user decision, option A):** with unlimited batches and the R7 noop, R6's term check never changed an outcome,
+  so a Figure 8 test couldn't fail. `RaftConfig.max_entries_per_append` (default None, today's behavior) caps entries per
+  AppendEntries, as real implementations do. All existing tests pass with no test code changed.
+- **Judgment call:** the cap only limits message size. A success reply doesn't send the next batch; the next heartbeat or
+  proposal does. The alternative (send at once on success) also fires with no cap and changes default traffic. In a scratch copy
+  it pushed one T12 seed past its election bound.
+- **R6 now has a unit test with real replies:** with a cap of 1 or 2, followers confirm 20 term-1 entries long before the new
+  leader's noop, and the leader's commit index must stay at 0 until the noop is on 3 of 5. Removing R6's term check in a scratch
+  copy now fails that test, not only the one with hand-written replies. Ignoring the cap or going one past it fails the cap tests.

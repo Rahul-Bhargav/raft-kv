@@ -24,7 +24,7 @@ in a few minutes and any agent can pick it up cold. The spec is in `DESIGN.md`, 
 | T11 | `SimCluster.write` + KV apply + `tests/test_replication.py` | T10 | done |
 | **G3** | **Gate: replication reviewed** | T09–T11 | approved |
 | T12 | `tests/test_failures.py`: restart (R1), minority leader, heal (R2), no majority | G3 | review |
-| T13a | `RaftConfig.max_entries_per_append`: optional cap on entries per AppendEntries | T12 | todo |
+| T13a | `RaftConfig.max_entries_per_append`: optional cap on entries per AppendEntries | T12 | review |
 | T13 | `test_figure8`: scripted Figure 8 scenario (R6), using a small batch cap | T13a | todo |
 | T14 | `tests/invariants.py`: the 5 invariants, run after every simulator step | T12 | todo |
 | T15 | `tests/test_fuzz.py`: randomized fault schedules over many seeds | T14 | todo |
@@ -145,6 +145,7 @@ the follower confirms them (each success reply moves `next_index`, and the next 
 never changes an outcome at the cluster level and a Figure 8 test couldn't fail. Real Raft implementations cap batch size,
 and with a cap R6 becomes load-bearing.
 **Done when:** a cap of 1 or 2 still replicates a long log to a lagging follower, and all existing tests pass unchanged (default None).
+*Notes:* reading of "the next send or heartbeat continues": the cap only limits message size and adds no new send, so a lagging follower gets one batch per heartbeat (or proposal). Sending the next batch at once on success would also fire with no cap, whenever entries were proposed after a message went out, and change today's default traffic (in a scratch copy it pushed one T12 seed past its election bound). A cap below 1 raises `ValueError`, since 0 would never replicate anything. Test helpers: `make_node`/`leader` take an optional config, and `exchange` can record what it delivers. Two test comments that said our leader always sends to the end of its log now say "with no batch cap"; no test code or assertion changed. With a cap, real replies confirm old-term entries without the noop, so removing R6's term check now also fails `test_batch_cap_still_replicates_a_long_log_to_lagging_followers`.
 
 ### T13 · Figure 8
 `tests/test_failures.py`. Script the Figure 8 scenario from the Raft paper deterministically (partitions/crashes to control

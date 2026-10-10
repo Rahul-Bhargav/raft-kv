@@ -30,11 +30,19 @@ class Role(str, Enum):
 
 @dataclass(frozen=True)
 class RaftConfig:
-    """Timing, in ticks. Frozen, because the default instance is shared by every node."""
+    """Timing (in ticks) and batch size. Frozen: the default instance is shared by every node."""
 
     heartbeat_interval: int = 10
     election_timeout_min: int = 30  # each timeout is drawn at random from [min, max)
     election_timeout_max: int = 60
+    # The most entries one AppendEntries may carry. None means no limit: everything from
+    # next_index on. _send_append_entries explains why a limit matters for R6.
+    max_entries_per_append: int | None = None
+
+    def __post_init__(self) -> None:
+        # A limit of 0 would send only empty heartbeats, and nothing would ever replicate.
+        if self.max_entries_per_append is not None and self.max_entries_per_append < 1:
+            raise ValueError("max_entries_per_append must be None or at least 1")
 
 
 class RaftNode:
@@ -249,12 +257,23 @@ class RaftNode:
             self._send_append_entries(peer)
 
     def _send_append_entries(self, peer: str) -> None:
-        """Send `peer` every entry from next_index[peer] on: a plain heartbeat if it has them all.
+        """Send `peer` the entries from next_index[peer] on: a plain heartbeat if it has them all.
 
         next_index moves only when the peer confirms entries, so every heartbeat repeats whatever
         is still unconfirmed. A lost AppendEntries is simply retried at the next one.
+
+        With max_entries_per_append set, one message carries at most that many. The rest follow
+        as the peer confirms them: a success moves next_index, and the next heartbeat or proposal
+        sends from there. Why allow a limit at all? Without one, every message runs to the end of
+        our log, so any reply that confirms an earlier term's entry also confirms our R7 noop, and
+        R6's term check never changes what gets committed. Real implementations do limit batch
+        size. Then a follower can confirm an earlier term's entry before it has our noop, which is
+        the case R6 exists for (Figure 8 in the Raft paper).
         """
         prev_index = self.next_index[peer] - 1
+        entries = self.storage.entries_from(prev_index + 1)
+        if self.config.max_entries_per_append is not None:
+            entries = entries[: self.config.max_entries_per_append]
         self._send(
             AppendEntries(
                 self.node_id,
@@ -262,7 +281,7 @@ class RaftNode:
                 self.term,
                 prev_log_index=prev_index,
                 prev_log_term=self.storage.term_at(prev_index),  # 1 <= next_index <= last + 1
-                entries=tuple(self.storage.entries_from(prev_index + 1)),
+                entries=tuple(entries),
                 leader_commit=self.commit_index,
             )
         )
