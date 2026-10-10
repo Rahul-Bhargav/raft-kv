@@ -90,3 +90,16 @@ The README's AI section is summarized from this file. Newest entries go at the b
   covering failed writes.
 - **How it was verified:** mutations of `write()` (no term check, returning right after propose, waiting on any node instead of
   the leader) each fail a test in `tests/test_replication.py`.
+
+## 2026-10-10 · Failure scenarios (T12, written by Claude Opus)
+- **Scripting instead of hoping:** a double vote needs a precise order of events (a voter crashes after granting, then a rival
+  in the *same* term asks it), which random timeouts almost never produce. A small test helper, `SimCluster.time_out()`, makes
+  one chosen node stand for election, and scripted tests use 1000-tick timeouts so nobody else does. No node logic changed.
+- **Checked that the test has teeth:** in a scratch copy, making the simulator forget a node's vote on restart fails
+  `test_restart_does_not_double_vote` on every seed. With its direct vote checks removed, the same mutation shows the real
+  damage: n2 wins term 1 while n1 already leads it.
+- **Judgment call:** "no majority" crashes the leader along with two followers. Pre-vote and check-quorum are out of scope, so
+  a leader that survived in a minority would keep calling itself leader; it still couldn't commit, which is what
+  `test_minority_leader_cannot_commit` shows.
+- **Other mutations caught:** a majority of 2 instead of 3 fails all four partition/no-majority tests, and a leader that
+  ignores higher terms, or adopts them without stepping down, fails `test_stale_leader_steps_down`.

@@ -122,6 +122,21 @@ class SimCluster:
     def heal(self) -> None:
         self.network.heal()
 
+    def time_out(self, node_id: str) -> None:
+        """Make one node's election timer run out now, as if its clock ran fast.
+
+        The node ticks on its own until it starts an election. Scripted tests use long election
+        timeouts, so no node stands on its own, and call this to pick who stands and when. Only a
+        follower or candidate can time out: a leader has no running election timer.
+        """
+        node = self.nodes[node_id]
+        if node is None or node.role == Role.LEADER:
+            raise ValueError(f"{node_id} is crashed or a leader, so it can't time out")
+        term = node.term
+        while node.term == term:  # ends within election_timeout_max ticks
+            node.tick()
+            self._collect(node)
+
     # --- internals ---
 
     def _new_node(self, node_id: str) -> RaftNode:

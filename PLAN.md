@@ -23,7 +23,7 @@ in a few minutes and any agent can pick it up cold. The spec is in `DESIGN.md`, 
 | T10 | Commit: majority rule (R6), `leader_commit`, `take_committed`, noop on election (R7) | T09 | done |
 | T11 | `SimCluster.write` + KV apply + `tests/test_replication.py` | T10 | done |
 | **G3** | **Gate: replication reviewed** | T09–T11 | approved |
-| T12 | `tests/test_failures.py`: restart (R1), minority leader, heal (R2), no majority | G3 | todo |
+| T12 | `tests/test_failures.py`: restart (R1), minority leader, heal (R2), no majority | G3 | review |
 | T13a | `RaftConfig.max_entries_per_append`: optional cap on entries per AppendEntries | T12 | todo |
 | T13 | `test_figure8`: scripted Figure 8 scenario (R6), using a small batch cap | T13a | todo |
 | T14 | `tests/invariants.py`: the 5 invariants, run after every simulator step | T12 | todo |
@@ -135,6 +135,7 @@ on all nodes, a lagging follower catches up after restart, conflicting uncommitt
 ### T12 · Failure tests
 `tests/test_failures.py` (small cluster helpers allowed). `test_restart_does_not_double_vote`, minority leader can't commit,
 `test_stale_leader_steps_down` after heal with its entries overwritten, no majority means no leader and no commits, restoring a node brings progress back.
+*Notes:* new test helper `SimCluster.time_out(node_id)` ticks one node alone until it stands for election; scripted tests set 1000-tick timeouts, so only the nodes the test picks ever stand. The R1 test is scripted: n3 votes for n1, crashes, and restarts next to n2, which campaigns in the same term with an empty log (so R3 can't be what stops it). Spec choice: "no majority" crashes the leader among the three, since without check-quorum a leader left in a minority keeps its role (it still can't commit; the minority-leader test covers that). Each test was checked against a scratch mutation: a vote lost on restart (n2 then wins term 1 too), a majority of 2, and a leader that ignores or doesn't step down on a higher term.
 
 ### T13a · Batch cap
 `raft/node.py`, `tests/test_node_replication.py`. Add `max_entries_per_append: int | None = None` to `RaftConfig` (None means
