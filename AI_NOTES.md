@@ -125,3 +125,33 @@ The README's AI section is summarized from this file. Newest entries go at the b
 - **Where the AI checked its own test:** I also removed the test's own R6 checks along with R6. The end state still looked
   fine (every node ends with n5's entries), so the test would have passed, yet n1 had applied index 2 twice, from term 2
   before its crash and from term 3 after. The per-tick checker is what catches it. This is noted for T14's invariants.
+
+## 2026-10-10 · Invariants (T14, written by Claude Opus)
+- **What runs:** every cluster test now builds its cluster with `checked_cluster()`, so Election Safety, Log Matching, Leader
+  Completeness, State Machine Safety and No lost acknowledged writes are checked after every step of every scripted test (and
+  of the fuzz test, T15). A failure names the invariant, the tick, the nodes and the index/term, for example
+  `State Machine Safety violated at tick 91: n1 applied index 2 from term 3 = {'op': 'noop'}, but n1 (before restarting)
+  applied index 2 from term 2 = {'op': 'noop'} at tick 49`.
+- **History, not snapshots (the T13 requirement):** with R6's term check and `test_figure8`'s own R6 checks removed in a scratch
+  copy, the test passes without the checker, and a check that only compares the live nodes' current state passes too, on all 10
+  seeds. The real checker fails all 10: Leader Completeness first (n5 leads term 5 without the term-2 entry n1 committed at ticks
+  48-52). With Leader Completeness switched off, State Machine Safety fires when n5 applies its own index 2 while n1 is down; with
+  it looking at n1 alone, it reports the exact case above, n1 against itself before its restart.
+- **Each invariant fires on a real bug** (scratch copies of `raft/node.py`): a majority of 2 gives `Election Safety violated at
+  tick 53: n5 and n1 both led term 1`; a follower that skips the consistency check gives Log Matching (`n2 has index 3 from term
+  4 ... after a term-1 entry, but n3 had index 3 from term 4 ... after a term-2 entry`); voting without R3's log check gives Leader
+  Completeness (a term-4 leader missing a committed write); `take_committed` skipping the newest entry gives No lost acknowledged
+  writes (the leader's KV store lacks the write it just acknowledged). `tests/test_invariants.py` also feeds each check a
+  hand-built bad state and pins the exact message.
+- **Judgment calls:**
+  - *Acknowledged write* = a `set` entry applied by the leader that proposed it. That is exactly when `SimCluster.write` returns
+    True. A write that `write()` gave up on but its leader applied later still counts, which only makes the check stricter.
+  - Log Matching is checked one entry at a time: an (index, term) pair must always carry the same command and follow an entry of
+    the same term. By induction that is the same as "identical up to there", and it is checked across the whole run, which is
+    cheap and stricter.
+  - Leader Completeness needs the term an entry was committed in. The checker uses the term of the first node seen with it
+    committed: usually the committing leader, and never earlier than the real term, so it can't fire on a stale leader that was
+    legitimately elected in an older term (a unit test covers that case).
+  - The KV check replays applied entries into a plain dict, not `KVStore`, so it checks the driver independently.
+- **Cost:** the checks are incremental (new entries, newly committed and applied indexes, new leaders). The suite went from
+  0.62 s to 1.14 s; most of the extra is Log Matching's per-step log comparison on the load test's long logs (hundreds of entries).

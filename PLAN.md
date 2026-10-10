@@ -26,7 +26,7 @@ in a few minutes and any agent can pick it up cold. The spec is in `DESIGN.md`, 
 | T12 | `tests/test_failures.py`: restart (R1), minority leader, heal (R2), no majority | G3 | review |
 | T13a | `RaftConfig.max_entries_per_append`: optional cap on entries per AppendEntries | T12 | review |
 | T13 | `test_figure8`: scripted Figure 8 scenario (R6), using a small batch cap | T13a | review |
-| T14 | `tests/invariants.py`: the 5 invariants, run after every simulator step | T12 | todo |
+| T14 | `tests/invariants.py`: the 5 invariants, run after every simulator step | T12 | review |
 | T15 | `tests/test_fuzz.py`: randomized fault schedules over many seeds | T14 | todo |
 | **G4** | **Gate: correctness evidence complete** | T12–T15 | waiting |
 | T16 | KV duplicate detection by `(client_id, seq)` | G4 | todo |
@@ -158,6 +158,7 @@ Test-only helpers in `sim/` are fine. Don't change node logic to make the test e
 ### T14 · Invariants
 `tests/invariants.py`, wired into every `SimCluster` test (fixture or `checkers`). The 5 invariants from DESIGN.md, each with
 a clear failure message that includes the tick and node IDs.
+*Notes:* `checked_cluster()` puts an `Invariants` checker first in `cluster.checkers`, and every cluster test now builds its cluster with it (`tests/test_invariants.py` tests the checker itself). The checks keep a history and look only at what changed each step: leaders come from events and roles; each new log entry is checked against every entry ever seen at its (index, term), including the previous entry's term; each leader is checked against entries committed in earlier terms (the commit's term is that of the first node seen with it committed, never too early); the first entry applied at each index is remembered across crashes and restarts. An acknowledged write is a `set` applied by the leader that proposed it, which is `write()`'s True condition; its KV effect is checked against our own replay of what each node applied. **Evidence:** each invariant fires on a scratch mutation (majority of 2, no consistency check, no R3 log check, `take_committed` skipping an entry). With R6 and `test_figure8`'s own R6 checks removed, Leader Completeness fires at n5's term-5 election on every seed; with it off, State Machine Safety fires; looking at n1 alone, it reports n1's apply after restart against its own apply at tick 49. A state-only check passes all 10 seeds. Suite: 0.62 s → 1.14 s.
 
 ### T15 · Fuzz
 `tests/test_fuzz.py`. Per seed: random crashes and restarts (never more than a minority down at once for the liveness check),

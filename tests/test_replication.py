@@ -5,6 +5,7 @@ import random
 from raft.messages import Entry
 from raft.node import Role
 from sim.cluster import SimCluster
+from tests.invariants import checked_cluster
 
 ELECTION_BOUND = 150  # ticks; test_election.py measured the worst first election at 84
 # A follower applies an entry when the next AppendEntries brings the new commit index: at most
@@ -36,7 +37,7 @@ def converged(cluster: SimCluster) -> bool:
 
 def test_a_write_applies_on_every_node():
     for seed in range(20):
-        cluster = SimCluster(seed=seed)
+        cluster = checked_cluster(seed=seed)
         leader_id = elect(cluster)
         assert cluster.write("x", "1"), f"seed {seed}"
         assert cluster.kvs[leader_id].data == {"x": "1"}  # applied there when write() returns
@@ -47,7 +48,7 @@ def test_a_write_applies_on_every_node():
 
 
 def test_writes_apply_in_order():
-    cluster = SimCluster(seed=0)
+    cluster = checked_cluster(seed=0)
     elect(cluster)
     for key, value in [("x", "1"), ("y", "2"), ("x", "3")]:
         assert cluster.write(key, value)
@@ -57,13 +58,13 @@ def test_writes_apply_in_order():
 
 
 def test_write_without_a_leader_returns_false_at_once():
-    cluster = SimCluster(seed=0)  # tick 0: nobody has stood for election yet
+    cluster = checked_cluster(seed=0)  # tick 0: nobody has stood for election yet
     assert not cluster.write("x", "1")
     assert cluster.now == 0
 
 
 def test_a_lagging_follower_catches_up_after_restart():
-    cluster = SimCluster(seed=1)
+    cluster = checked_cluster(seed=1)
     leader_id = elect(cluster)
     follower = next(node_id for node_id in cluster.ids if node_id != leader_id)
     cluster.crash(follower)
@@ -80,7 +81,7 @@ def test_a_lagging_follower_catches_up_after_restart():
 
 
 def test_conflicting_uncommitted_entries_are_overwritten():
-    cluster = SimCluster(seed=2)
+    cluster = checked_cluster(seed=2)
     old = elect(cluster)
     assert cluster.write("a", "1")
     cluster.run(FOLLOWER_APPLY_BOUND)
@@ -109,7 +110,7 @@ def test_conflicting_uncommitted_entries_are_overwritten():
 
 def test_write_fails_when_its_entry_is_overwritten():
     # Like a 503 from the demo server: something was applied at our index, but not our entry.
-    cluster = SimCluster(seed=2)
+    cluster = checked_cluster(seed=2)
     old = elect(cluster)
     # Commit an entry first, so every node's log is as long as the old leader's. Then the new
     # leader's noop lands on the same index as the lost write. (Without this, the new leader's
@@ -132,7 +133,7 @@ def test_all_kv_stores_converge():
     # up with the same KV store. (With these seeds even the interrupted write succeeds: its entry
     # had already reached a majority, so the next leader commits it.)
     for seed in range(20):
-        cluster = SimCluster(seed=seed, max_delay=5, drop_rate=0.1, dup_rate=0.2)
+        cluster = checked_cluster(seed=seed, max_delay=5, drop_rate=0.1, dup_rate=0.2)
         elect(cluster)
         crash_at = cluster.now + random.Random(seed).randrange(20, 120)
         crashed: list[str] = []

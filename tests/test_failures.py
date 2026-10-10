@@ -13,6 +13,7 @@ import pytest
 
 from raft.node import RaftConfig, RaftNode, Role
 from sim.cluster import SimCluster
+from tests.invariants import checked_cluster
 
 # Bounds, in ticks, with about 2x headroom over the worst case measured over these seeds.
 ELECTION_BOUND = 150  # test_election.py measured the worst first election at 84
@@ -71,7 +72,7 @@ def test_restart_does_not_double_vote(seed: int) -> None:
     announces it is queued, so the restarted n3 refuses.
     We check: n3 comes back still voted for n1, n2 doesn't win, and n1 is term 1's only leader.
     """
-    cluster = SimCluster(seed=seed, config=SCRIPTED)
+    cluster = checked_cluster(seed=seed, config=SCRIPTED)
     cluster.partition({"n1", "n3", "n4"}, {"n2", "n5"})  # n2 can't hear about n1's election
     assert campaign(cluster, "n1")  # term 1, with votes from n3 and n4
     assert cluster.storages["n3"].voted_for == "n1"
@@ -125,7 +126,7 @@ def test_minority_leader_cannot_commit():
     old side has applied only a=1, and the majority side has applied b=2 as well.
     """
     for seed in range(20):
-        cluster = SimCluster(seed=seed)
+        cluster = checked_cluster(seed=seed)
         old, buddy, new = split_off_the_leader_and_one_follower(cluster)
         old_node, buddy_node = cluster.nodes[old], cluster.nodes[buddy]
         assert old_node.role == Role.LEADER, f"seed {seed}"  # it still thinks it leads...
@@ -154,7 +155,7 @@ def test_stale_leader_steps_down():
     log matches the new leader's, and every node has applied a=1 and b=2 and nothing else.
     """
     for seed in range(20):
-        cluster = SimCluster(seed=seed)
+        cluster = checked_cluster(seed=seed)
         old, buddy, new = split_off_the_leader_and_one_follower(cluster)
         cluster.heal()
         cluster.run(FOLLOWER_APPLY_BOUND)
@@ -196,7 +197,7 @@ def test_no_majority_means_no_leader_and_no_commits():
     they really did try), their logs and commit indexes don't change, and a write fails.
     """
     for seed in range(20):
-        cluster = SimCluster(seed=seed)
+        cluster = checked_cluster(seed=seed)
         _, survivors = crash_the_leader_and_two_followers(cluster)
         before = {n: cluster.nodes[n] for n in survivors}  # no restarts here: same objects
         terms = {n: node.term for n, node in before.items()}
@@ -228,7 +229,7 @@ def test_restarting_one_node_restores_progress():
     up with both the old write and the new one.
     """
     for seed in range(20):
-        cluster = SimCluster(seed=seed)
+        cluster = checked_cluster(seed=seed)
         crashed, survivors = crash_the_leader_and_two_followers(cluster)
         cluster.run(300)  # a while with no majority, so the survivors' terms run ahead
         cluster.restart(crashed[0])  # the old leader; it comes back as a follower
@@ -336,7 +337,7 @@ def test_figure8(seed: int) -> None:
     We check: at no tick does any node count the term-2 entry as committed, and in the end every
     node has n5's entry at index 2 and has committed it.
     """
-    cluster = SimCluster(seed=seed, config=FIGURE_8)
+    cluster = checked_cluster(seed=seed, config=FIGURE_8)
 
     def never_commits_the_term_2_entry(c: SimCluster) -> None:
         for node in live(c):
@@ -381,7 +382,7 @@ def test_figure8_current_term_entry_commits_the_old_one(seed: int) -> None:
     We check: n1's commit index jumps from 0 straight to 3 (index 2 is never committed on its
     own), n5 loses every election it tries, and after n2 wins, every node keeps the term-2 entry.
     """
-    cluster = SimCluster(seed=seed, config=FIGURE_8)
+    cluster = checked_cluster(seed=seed, config=FIGURE_8)
     figure_8_up_to_c(cluster)
 
     n1 = cluster.nodes["n1"]

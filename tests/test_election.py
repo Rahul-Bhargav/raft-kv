@@ -3,6 +3,7 @@
 from raft.messages import Entry
 from raft.node import RaftConfig, Role
 from sim.cluster import SimCluster
+from tests.invariants import checked_cluster
 
 # Bounds, in ticks, with about 2x headroom over the worst case measured over these seeds.
 # The first timeout alone is 30-59 ticks with the default config.
@@ -32,7 +33,7 @@ def assert_everyone_follows(cluster: SimCluster, leader_id: str) -> None:
 
 def test_one_leader_is_elected_and_everyone_follows_it():
     for seed in range(100):
-        cluster = SimCluster(seed=seed)
+        cluster = checked_cluster(seed=seed)
         leader_id = elect(cluster)
         cluster.run(30)  # a few heartbeats, so the losing candidates hear from the winner
         assert cluster.leader() == leader_id, f"seed {seed}"
@@ -45,7 +46,7 @@ def test_split_votes_resolve():
     config = RaftConfig(election_timeout_min=30, election_timeout_max=35)
     contested = 0
     for seed in range(200):
-        cluster = SimCluster(seed=seed, config=config)
+        cluster = checked_cluster(seed=seed, config=config)
         leader_id = elect(cluster, max_ticks=500)  # measured worst: 226
         cluster.run(30)
         assert_everyone_follows(cluster, leader_id)
@@ -56,7 +57,7 @@ def test_split_votes_resolve():
 
 def test_a_new_leader_is_elected_after_the_leader_crashes():
     for seed in range(50):
-        cluster = SimCluster(seed=seed)
+        cluster = checked_cluster(seed=seed)
         old_leader = elect(cluster)
         old_term = cluster.nodes[old_leader].term
         cluster.crash(old_leader)
@@ -79,7 +80,7 @@ def test_outdated_log_cannot_win():
     logs = {"n1": [1, 1], "n2": [1, 1, 1, 1], "n3": [1, 2], "n4": [1, 2], "n5": [1, 2]}
     outdated_campaigns = 0
     for seed in range(200):
-        cluster = SimCluster(seed=seed)
+        cluster = checked_cluster(seed=seed)
         for node_id, terms in logs.items():
             storage = cluster.storages[node_id]
             storage.append([Entry(t, {"op": "noop"}) for t in terms])
@@ -106,7 +107,7 @@ def test_follower_keeps_leader_under_load():
     # AppendEntries reach each follower at most 10 + 7 = 17 ticks apart, well inside the 30-tick
     # minimum timeout: any election here would be a timer bug.
     for seed in range(10):
-        cluster = SimCluster(seed=seed, min_delay=1, max_delay=8, dup_rate=0.5)
+        cluster = checked_cluster(seed=seed, min_delay=1, max_delay=8, dup_rate=0.5)
         leader_id = elect(cluster)
         term = cluster.nodes[leader_id].term
         events_before = len(cluster.events)
@@ -134,7 +135,7 @@ def test_follower_keeps_leader_under_load():
 
 
 def test_partitioned_leader_is_replaced_and_steps_down_on_heal():
-    cluster = SimCluster(seed=3)
+    cluster = checked_cluster(seed=3)
     old_leader = elect(cluster)
     cluster.partition({old_leader})  # the other four can still form a majority
     assert cluster.run_until(lambda: cluster.leader() != old_leader, RE_ELECTION_BOUND)
@@ -151,7 +152,7 @@ def test_partitioned_leader_is_replaced_and_steps_down_on_heal():
 
 def test_same_seed_gives_the_same_run():
     def events(seed: int) -> list[tuple[int, str, str]]:
-        cluster = SimCluster(seed=seed, max_delay=5, drop_rate=0.2, dup_rate=0.2)
+        cluster = checked_cluster(seed=seed, max_delay=5, drop_rate=0.2, dup_rate=0.2)
         cluster.run(300)
         cluster.crash("n1")
         cluster.run(100)
@@ -164,7 +165,7 @@ def test_same_seed_gives_the_same_run():
 
 
 def test_checkers_run_after_every_step():
-    cluster = SimCluster(seed=0)
+    cluster = checked_cluster(seed=0)
     seen = []
     cluster.checkers.append(lambda c: seen.append(c.now))
     cluster.run(5)
@@ -172,7 +173,7 @@ def test_checkers_run_after_every_step():
 
 
 def test_crashed_node_keeps_its_storage_and_restarts_as_a_follower():
-    cluster = SimCluster(seed=0)
+    cluster = checked_cluster(seed=0)
     leader_id = elect(cluster)
     term = cluster.nodes[leader_id].term
     cluster.crash(leader_id)
