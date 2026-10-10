@@ -23,6 +23,7 @@ Q1–Q10 were not answered explicitly, so the recommended options are in force. 
 | Q7 | Dashboard is **plain HTML/CSS/JS**, no CDN, no build step |
 | Q8 | Extras in scope: client duplicate detection, dashboard event feed, auto-write toggle |
 | Q10 | The node **queues outputs** (outbox); drivers collect them with `take_*()` after every call |
+| T13 | Option A: an optional batch cap (`max_entries_per_append`). With unlimited batches and the R7 noop, R6 never changes an outcome at the cluster level. With a cap it does, and Figure 8 becomes testable |
 | Storage | Tests: `MemoryStorage`. Demo: one JSON file per node, temp file + fsync + `os.replace` on every change |
 
 ## Architecture: one core, two drivers
@@ -101,6 +102,7 @@ class RaftConfig:
     heartbeat_interval: int = 10      # ticks
     election_timeout_min: int = 30    # ticks; actual timeout is random in [min, max)
     election_timeout_max: int = 60
+    max_entries_per_append: int | None = None   # cap per AppendEntries; None = unlimited
 
 class RaftNode:
     def __init__(self, node_id: str, peers: list[str], storage: Storage,

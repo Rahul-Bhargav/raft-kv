@@ -19,12 +19,13 @@ in a few minutes and any agent can pick it up cold. The spec is in `DESIGN.md`, 
 | T07 | Voting and leadership: grant rules (R3, R4), count votes, heartbeats | T06 | done |
 | T08 | `sim/cluster.py`: `SimCluster` + `tests/test_election.py` | T07 | done |
 | **G2** | **Gate: leader election reviewed** | T06–T08 | approved |
-| T09 | Log replication: `propose`, consistency check, conflict truncation (R5), backtracking | G2 | review |
-| T10 | Commit: majority rule (R6), `leader_commit`, `take_committed`, noop on election (R7) | T09 | review |
-| T11 | `SimCluster.write` + KV apply + `tests/test_replication.py` | T10 | review |
-| **G3** | **Gate: replication reviewed** | T09–T11 | waiting |
+| T09 | Log replication: `propose`, consistency check, conflict truncation (R5), backtracking | G2 | done |
+| T10 | Commit: majority rule (R6), `leader_commit`, `take_committed`, noop on election (R7) | T09 | done |
+| T11 | `SimCluster.write` + KV apply + `tests/test_replication.py` | T10 | done |
+| **G3** | **Gate: replication reviewed** | T09–T11 | approved |
 | T12 | `tests/test_failures.py`: restart (R1), minority leader, heal (R2), no majority | G3 | todo |
-| T13 | `test_figure8`: scripted Figure 8 scenario (R6) | T12 | todo |
+| T13a | `RaftConfig.max_entries_per_append`: optional cap on entries per AppendEntries | T12 | todo |
+| T13 | `test_figure8`: scripted Figure 8 scenario (R6), using a small batch cap | T13a | todo |
 | T14 | `tests/invariants.py`: the 5 invariants, run after every simulator step | T12 | todo |
 | T15 | `tests/test_fuzz.py`: randomized fault schedules over many seeds | T14 | todo |
 | **G4** | **Gate: correctness evidence complete** | T12–T15 | waiting |
@@ -135,10 +136,21 @@ on all nodes, a lagging follower catches up after restart, conflicting uncommitt
 `tests/test_failures.py` (small cluster helpers allowed). `test_restart_does_not_double_vote`, minority leader can't commit,
 `test_stale_leader_steps_down` after heal with its entries overwritten, no majority means no leader and no commits, restoring a node brings progress back.
 
+### T13a · Batch cap
+`raft/node.py`, `tests/test_node_replication.py`. Add `max_entries_per_append: int | None = None` to `RaftConfig` (None means
+unlimited, today's behavior). `_send_append_entries` sends at most that many entries from `next_index`. The rest go out as
+the follower confirms them (each success reply moves `next_index`, and the next send or heartbeat continues from there).
+**Why (user decision, option A):** with unlimited batches plus the R7 noop, every reply covers the noop, so R6's term check
+never changes an outcome at the cluster level and a Figure 8 test couldn't fail. Real Raft implementations cap batch size,
+and with a cap R6 becomes load-bearing.
+**Done when:** a cap of 1 or 2 still replicates a long log to a lagging follower, and all existing tests pass unchanged (default None).
+
 ### T13 · Figure 8
 `tests/test_failures.py`. Script the Figure 8 scenario from the Raft paper deterministically (partitions/crashes to control
-who gets which entries). Assert that a previous-term entry replicated on a majority is **not** reported committed until a
-current-term entry commits. Test-only helpers in `sim/` are fine. Don't change node logic to make the test easier.
+who gets which entries), using `max_entries_per_append=1` so a follower can confirm an old-term entry without the leader's noop.
+Assert that a previous-term entry replicated on a majority is **not** reported committed until a current-term entry commits.
+**Required evidence:** in a scratch copy, remove R6's term check from `_advance_commit_index` and confirm `test_figure8` fails.
+Test-only helpers in `sim/` are fine. Don't change node logic to make the test easier.
 
 ### T14 · Invariants
 `tests/invariants.py`, wired into every `SimCluster` test (fixture or `checkers`). The 5 invariants from DESIGN.md, each with
