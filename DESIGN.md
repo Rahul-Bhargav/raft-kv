@@ -97,7 +97,7 @@ crashed node's `MemoryStorage` and gives it back on restart; that's how a "disk"
 ```python
 class Role(str, Enum): FOLLOWER = "follower"; CANDIDATE = "candidate"; LEADER = "leader"
 
-@dataclass
+@dataclass(frozen=True)        # one default instance is shared by every node
 class RaftConfig:
     heartbeat_interval: int = 10      # ticks
     election_timeout_min: int = 30    # ticks; actual timeout is random in [min, max)
