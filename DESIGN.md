@@ -8,6 +8,13 @@ A hand-written Raft implementation in Python 3.12 that replicates a key-value st
 - **Correctness evidence:** a deterministic simulator with randomized fault injection and safety checks.
 - **Demo:** the *same* Raft code running in Docker containers over HTTP, with a live dashboard.
 
+## Simplicity first (user decision, 2026-10-12)
+
+The code was getting too elaborate to review and defend in a day. From here on, prefer the simple version even where it gives
+up some edge cases, and write the limitation down. The remaining tasks in `PLAN.md` have line budgets, fewer tests and fewer
+features. What was cut: duplicate detection for retried writes, the dashboard's Kill/Start buttons and the Docker socket,
+the auto-write toggle, the separate 503 answer for overwritten writes, and tests for the dashboard.
+
 ## Decisions
 
 Q1–Q10 were not answered explicitly, so the recommended options are in force. The user can override any of them.
@@ -15,13 +22,13 @@ Q1–Q10 were not answered explicitly, so the recommended options are in force. 
 | # | Decision |
 |---|---|
 | Q1 | **5 nodes** in the demo |
-| Q2 | Dashboard crashes nodes with **Docker kill/start via the mounted docker.sock** |
+| Q2 | Nodes are killed and restarted **from a terminal** (`docker compose kill node3` / `docker compose start node3`). The dashboard has no Kill/Start buttons and no Docker socket (cut for simplicity) |
 | Q3 | Partitions = **a blocked-peer list inside each node** (app level) |
 | Q4 | **One-way messages**: every Raft message is `POST /raft` → 204; a reply is a separate POST |
 | Q5 | **aiohttp** is the only runtime dependency |
 | Q6 | **uv + Python 3.12** (`uv run pytest`) |
 | Q7 | Dashboard is **plain HTML/CSS/JS**, no CDN, no build step |
-| Q8 | Extras in scope: client duplicate detection, dashboard event feed, auto-write toggle |
+| Q8 | Extras: only the dashboard event list. Duplicate detection and the auto-write toggle were cut for simplicity |
 | Q10 | The node **queues outputs** (outbox); drivers collect them with `take_*()` after every call |
 | T13 | Option A: an optional batch cap (`max_entries_per_append`). With unlimited batches and the R7 noop, R6 never changes an outcome at the cluster level. With a cap it does, and Figure 8 becomes testable |
 | Storage | Tests: `MemoryStorage`. Demo: one JSON file per node, temp file + fsync + `os.replace` on every change |
@@ -67,7 +74,6 @@ All messages are `@dataclass(frozen=True, slots=True)` and carry `src: str`, `ds
   - `last_log_index` is the follower's last index, sent as a backtracking hint on failure.
 
 Commands: `{"op": "set", "key": str, "value": str}`, `{"op": "delete", "key": str}`, `{"op": "noop"}`.
-They may also carry `"client_id": str, "seq": int` for duplicate detection.
 
 ## `raft/storage.py`
 
@@ -145,7 +151,7 @@ Also:
 ## `raft/kv.py`
 
 `KVStore.apply(command) -> None` handles set, delete and noop. `KVStore.data: dict[str, str]`.
-Duplicate detection (a separate task): skip a command whose `(client_id, seq)` is ≤ the last applied seq for that client.
+Duplicate detection was cut for simplicity: a client that retries a write after a timeout can get it applied twice.
 
 ## `sim/`
 
@@ -204,7 +210,7 @@ The first four are Raft's own safety properties, with the names the paper gives 
 | Endpoint | Behavior |
 |---|---|
 | `POST /raft` | One message (JSON) → 204. Dropped if the sender is blocked |
-| `POST /client/write` | `{key, value[, client_id, seq]}`. Not leader → `421 {leader}`. Applied with the same term → `200 {index, term}`. Applied with a different term (overwritten) → `503`. Not applied within 5 s → `504` |
+| `POST /client/write` | `{key, value}`. Not leader → `421 {leader}`. Otherwise propose, then check every tick for up to 5 s: applied at that index with the same term → `200 {index, term}`, else `504`. No separate 503 |
 | `GET /state` | `{id, role, term, voted_for, leader_id, commit_index, last_applied, log, kv, blocked, events}` |
 | `POST /admin/partition` | `{blocked: [ids]}` → 204. `[]` heals |
 
@@ -215,14 +221,14 @@ The first four are Raft's own safety properties, with the names the paper gives 
   - `GET /api/cluster` sends `GET /state` to every node (300 ms timeout; no answer = down).
   - `POST /api/write` writes to the leader, following a `421`.
   - `POST /api/partition {groups}` and `POST /api/heal`.
-  - `POST /api/nodes/{id}/kill|start` use the Docker Engine API over `/var/run/docker.sock`. Kill sends SIGKILL.
-- `static/index.html`: polls every 500 ms. It shows one card per node (role, term, up/down, log boxes solid when committed and dashed when not, KV contents), a write box, an auto-write toggle, partition presets (isolate leader / leader + 1 | rest / heal), Kill/Start per node, and a merged event feed.
+  - No kill/start endpoints: nodes are killed and started from a terminal.
+- `static/index.html`: polls every 500 ms. It shows one card per node (role, term, up/down, log boxes solid when committed and dashed when not, KV contents), a write box, partition presets (isolate leader / leader + 1 | rest / heal), and a merged event list.
 
 ## Docker
 
 - One image (`python:3.12-slim` + aiohttp) for all containers.
 - `docker-compose.yml` defines `node1`–`node5` (fixed `container_name`, a named volume at `/data`, `restart: "no"`)
-  and `dashboard` (port 8080, `/var/run/docker.sock` mounted).
+  and `dashboard` (port 8080).
 - `docker compose down -v` resets everything.
 
 ## Demo scenarios

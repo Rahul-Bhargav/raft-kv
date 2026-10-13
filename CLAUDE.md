@@ -14,7 +14,9 @@ A hand-written Raft implementation in Python that replicates a key-value store. 
   coordination (Raft/Paxos libraries, etcd, ZooKeeper, etc.). The standard library, aiohttp, pytest and general tooling are fine.
 - The author has to explain and defend every line at the panel. Prefer small, readable code over clever code,
   and call out any decision that affects correctness so it can be checked.
-- Keep it small and done well. Don't add scope that isn't in PLAN.md.
+- **Simplicity first.** Keep it small and done well. Respect each task's line budget in PLAN.md, prefer the simple version even if it
+  handles fewer edge cases (and write the limitation down), write only the tests the task lists, and keep comments to one line.
+  Don't add scope that isn't in PLAN.md.
 - `raft/` never does I/O: no sockets, threads, clocks, files or asyncio.
 
 ## Workflow

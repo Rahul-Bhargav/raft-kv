@@ -208,3 +208,13 @@ The README's AI section is summarized from this file. Newest entries go at the b
   "bounds"). The code was correct each time, but I can only defend names I'd have chosen myself, so I rename as I review.
 - **Known limitation, left as is:** most deadlines are measured, not derived from `RaftConfig`. Changing the election timeout would
   mean re-measuring them.
+
+## 2026-10-12 · Course correction: the code was getting too elaborate
+- **What I saw:** the Raft core is small (`raft/node.py` is 447 lines, 245 of them code), but the repo had grown to about 930 lines of
+  code and 3,300 lines of tests, with long comments everywhere. That isn't reviewable in a day, and the brief says volume doesn't impress.
+- **Why it happened:** the agents were asked for exhaustive tests, deliberate-bug campaigns and thorough explanations, and they
+  delivered exactly that. The tool does what it's asked, at whatever volume. Deciding how much is enough is my job.
+- **What changed:** "simplicity first" is now a rule in `CLAUDE.md`, `DESIGN.md` and the task protocol. Remaining tasks have line
+  budgets. I accepted some lost edge cases for less code and wrote each one down as a limitation.
+- **Cut:** duplicate detection for retried writes; the dashboard's Kill/Start buttons and Docker socket (nodes are killed from a
+  terminal); the auto-write toggle; the separate 503 answer for overwritten writes; dashboard tests. Eight remaining tasks became five.

@@ -5,7 +5,7 @@ in a few minutes and any agent can pick it up cold. The spec is in `DESIGN.md`, 
 
 ## Status
 
-`todo` → `in-progress` → `review` (committed, waiting for the user) → `done` (approved by the user)
+`todo` → `in-progress` → `review` (committed, waiting for the user) → `done` (approved by the user). `cut` means dropped for simplicity.
 
 | ID | Task | Depends on | Status |
 |---|---|---|---|
@@ -23,21 +23,21 @@ in a few minutes and any agent can pick it up cold. The spec is in `DESIGN.md`, 
 | T10 | Commit: majority rule (R6), `leader_commit`, `take_committed`, noop on election (R7) | T09 | done |
 | T11 | `SimCluster.write` + KV apply + `tests/test_replication.py` | T10 | done |
 | **G3** | **Gate: replication reviewed** | T09–T11 | approved |
-| T12 | `tests/test_failures.py`: restart (R1), minority leader, heal (R2), no majority | G3 | review |
-| T13a | `RaftConfig.max_entries_per_append`: optional cap on entries per AppendEntries | T12 | review |
-| T13 | `test_figure8`: scripted Figure 8 scenario (R6), using a small batch cap | T13a | review |
-| T14 | `tests/safety_checks.py`: the 5 safety properties, run after every simulator step | T12 | review |
-| T15 | `tests/test_fuzz.py`: randomized fault schedules over many seeds | T14 | review |
-| **G4** | **Gate: correctness evidence complete** | T12–T15 | waiting |
-| T16 | KV duplicate detection by `(client_id, seq)` | G4 | todo |
-| T17 | `server/file_storage.py`: `FileStorage` | G4 | todo |
-| T18 | `server/node_server.py`: `/raft`, `/state`, `/admin/partition`, tick loop, `step()` | T17 | todo |
-| T19 | `POST /client/write` with waiting writes (200 / 421 / 503 / 504) | T18 | todo |
-| T20 | `Dockerfile` + `docker-compose.yml` (**the user must install Docker first**) | T19 | todo |
-| **G5** | **Gate: cluster runs in Docker** | T16–T20 | waiting |
-| T21 | `dashboard/app.py`: cluster fan-out, write, partition/heal, kill/start | G5 | todo |
-| T22 | `dashboard/static/index.html`: node cards, controls, event feed, auto-write | T21 | todo |
-| T23 | `README.md`: design summary, trade-offs, how to run, AI usage (from `AI_NOTES.md`) | T22 | todo |
+| T12 | `tests/test_failures.py`: restart (R1), minority leader, heal (R2), no majority | G3 | done |
+| T13a | `RaftConfig.max_entries_per_append`: optional cap on entries per AppendEntries | T12 | done |
+| T13 | `test_figure8`: scripted Figure 8 scenario (R6), using a small batch cap | T13a | done |
+| T14 | `tests/safety_checks.py`: the 5 safety properties, run after every simulator step | T12 | done |
+| T15 | `tests/test_fuzz.py`: randomized fault schedules over many seeds | T14 | done |
+| **G4** | **Gate: correctness evidence complete** | T12–T15 | approved |
+| T16 | ~~KV duplicate detection~~ | n/a | cut |
+| T17 | `server/file_storage.py`: `FileStorage` (about 40 lines, 2 tests) | G4 | todo |
+| T18 | `server/node_server.py`: the whole node server in one file (about 150 lines, at most 4 tests) | T17 | todo |
+| T19 | ~~Client writes~~ (merged into T18) | n/a | cut |
+| T20 | `Dockerfile` + `docker-compose.yml` (**the user must install Docker first**) | T18 | todo |
+| **G5** | **Gate: cluster runs in Docker** | T17–T20 | waiting |
+| T21 | Dashboard: `dashboard/app.py` (about 80 lines) + `static/index.html` (about 250 lines), no tests | G5 | todo |
+| T22 | ~~Dashboard UI~~ (merged into T21) | n/a | cut |
+| T23 | `README.md` (about 120 lines): design, trade-offs, limitations, how to run, AI usage | T21 | todo |
 | **G6** | **Gate: ready to submit** | all | waiting |
 
 ## How to work a task (any agent)
@@ -48,11 +48,17 @@ in a few minutes and any agent can pick it up cold. The spec is in `DESIGN.md`, 
 3. **Stay in scope.** Touch only the files the task names, plus `PLAN.md` and `AI_NOTES.md`.
    If the design is wrong or unclear, make the smallest reasonable choice, write it in the task's notes below,
    and flag it in your report. Don't silently redesign. Interfaces must match `DESIGN.md`.
-4. **Test.** Write the tests together with the code. `uv run pytest -q` (the **whole** suite) must pass before committing.
+4. **Keep it small.** This is a one-day take-home that a person must review and defend line by line, and the user has said the
+   code was getting too elaborate. Each task has a line budget. Treat it as a limit, not a target.
+   - Prefer the simple version even if it handles fewer edge cases, and list what it doesn't handle under the task's notes.
+   - Write only the tests the task lists. No exhaustive case matrices, and no deliberate-bug campaigns unless the task asks for one.
+   - Comments: one line for a decision that isn't obvious. No multi-paragraph docstrings. Don't restate the code.
+   - If the budget can't be met, cut scope and say what you cut. Don't go over.
+5. **Test.** Write the tests together with the code. `uv run pytest -q` (the **whole** suite) must pass before committing.
    Tests must be deterministic: seed every `random.Random`.
-5. **Record.** In this file, set the task's status to `review` and add a one-line note under the task.
+6. **Record.** In this file, set the task's status to `review` and add a one-line note under the task.
    If something worth telling the panel happened, add an entry to `AI_NOTES.md`: an AI mistake you caught, a judgment call, or a design gap.
-6. **Commit once.** Stage files by name (no `git add -A`). Use the message format:
+7. **Commit once.** Stage files by name (no `git add -A`). Use the message format:
    ```
    T05: Add simulated network with delay, drops and partitions
 
@@ -62,7 +68,7 @@ in a few minutes and any agent can pick it up cold. The spec is in `DESIGN.md`, 
    ```
    For example `Claude Sonnet 5.5` or `Claude Opus 5.5`. The trailer must credit the model that actually wrote the commit.
    Never push unless the user asks.
-7. **Report** in 10 lines or fewer: files changed, tests added, decisions made, and anything the user should look at.
+8. **Report** in 10 lines or fewer: files changed, tests added, decisions made, and anything the user should look at.
 
 The user marks tasks `done` and gates `approved` after review. Agents never do.
 
@@ -167,32 +173,44 @@ require a leader, every acknowledged write applied everywhere, and equal KV stor
 whole suite runs in about 30 s). A failure message prints the seed.
 *Notes:* one test per seed (`FUZZ_SEEDS`, default 1000: the whole suite takes about 13 s here), plus `test_schedules_are_not_trivial`, which checks that 20 seeds really do crash, reboot, partition, strike and acknowledge writes. Per seed: network delays, drops and duplicates; a batch cap of none, 1 or 2; crashes (at most 2 down), restarts, reboots (crash and restart at once), partitions and heals; and strikes on new leaders (none, half or all, crashed or cut off 1-15 ticks after they win). Then heal, restart everyone, settle within 1200 ticks (2x the worst of seeds 0-9999), and require every acknowledged write on every node and equal KV stores. Strikes and reboots were added after measuring: without strikes, removing R6 failed 1 seed in 8000; without reboots, a vote lost on restart failed 4 in 8000. **Evidence** (seeds 0-7999, scratch copies): R6 removed fails 55 (0.69%), all Leader Completeness; R5 truncating unconditionally fails 5006 (63%): 3346 State Machine Safety, 979 Leader Completeness, 681 no settled leader at the end; a vote lost on restart fails 109 (1.4%): 100 Election Safety, 9 the node's own two-leaders assert. The default 1000 seeds catch all three (7, 618 and 6 seeds). Large runs on the real code: seeds 0-9999 all pass (in batches), and `FUZZ_SEEDS=5000` takes 56 s. **Outside the named file:** the R5 runs showed two gaps in `tests/safety_checks.py`, fixed here. A node that deleted or replaced an entry it had committed either crashed the checker with an `IndexError` (deleted in the step it was applied) or went unnoticed (deleted later). Both are now State Machine Safety violations, each with a unit test; the T14 evidence was rerun and is unchanged.
 
-### T16 · Duplicate detection
-`raft/kv.py`, `tests/test_kv.py`. Skip a command whose `(client_id, seq)` is ≤ the last applied seq for that client.
+### T16 · Duplicate detection: cut
+Cut for simplicity. Limitation to state in the README: a client that retries a write after a timeout can get it applied twice.
 
 ### T17 · FileStorage
-`server/file_storage.py`, `tests/test_file_storage.py`. Implements `Storage`, using temp file + fsync + `os.replace`. Tests use `tmp_path`:
-reopening the same path restores term, vote and log, and a leftover `.tmp` file is ignored.
+`server/file_storage.py`, `tests/test_file_storage.py`. **Budget: about 40 lines of code, 2 tests.**
+Implements `Storage`. On every change, write `{term, voted_for, log}` as JSON to `path + ".tmp"`, flush, fsync, then `os.replace` it over `path`.
+Tests (with `tmp_path`): reopening the same path restores term, vote and log; a leftover `.tmp` file is ignored.
+Simplest route: subclass `MemoryStorage` and save after each mutating call.
 
-### T18 · Node server
-`server/node_server.py`, `tests/test_node_server.py` (aiohttp test client). Configured by environment variables. `step()` helper, tick loop,
-`POST /raft`, `GET /state`, `POST /admin/partition`, the blocked-peer filter, events stamped with time.
-It may add `pytest-aiohttp` to the dev group in `pyproject.toml` (via `uv add --dev`).
-
-### T19 · Client writes
-`server/node_server.py`, `tests/test_node_server.py`. `POST /client/write` with waiting writes resolved on apply (same term → 200,
-different term → 503), a 5 s timeout → 504, and not leader → 421 with a leader hint.
+### T18 · Node server (includes client writes)
+`server/node_server.py`, `tests/test_node_server.py`. **Budget: about 150 lines of code in one file, at most 4 tests.**
+- Configured by environment variables: `NODE_ID`, `PEERS` (`id=host:port,...`), `PORT`, `DATA_DIR`, `TICK_MS`.
+- One `step()` helper around every call into the node: send `take_messages()` as fire-and-forget POSTs (errors ignored), apply `take_committed()`
+  to the KV store, keep the last 20 `take_events()` with a timestamp.
+- A tick loop calls `step(node.tick)` every `TICK_MS`.
+- `POST /raft`: one message. Dropped if the sender is in the blocked set. Outbound messages to blocked peers are dropped too.
+- `POST /admin/partition {blocked: [ids]}`.
+- `GET /state`: id, role, term, voted_for, leader_id, commit_index, log, kv, blocked, events.
+- `POST /client/write {key, value}`: not leader → `421 {leader}`. Otherwise propose, then check every tick for up to 5 s: if that index was
+  applied with the same term → `200`, else `504`. **No separate 503**, and no futures: a simple polling loop is fine.
+- Tests, using `aiohttp.test_utils` inside `asyncio.run` so no new dependency is needed: a one-node server accepts a write and shows it in
+  `/state`; a non-leader answers 421; a message from a blocked sender is dropped; a restart with the same `DATA_DIR` keeps its term and log.
+Not handled, by decision: retries applying twice (T16 cut), linearizable reads, TLS/auth.
 
 ### T20 · Docker
-`Dockerfile`, `docker-compose.yml`, `.dockerignore`. Check with `docker compose up --build` and `curl localhost:<port>/state`.
-**Blocked until the user installs Docker Desktop or OrbStack.**
+`Dockerfile`, `docker-compose.yml`, `.dockerignore`. **Budget: about 50 lines in total.** One image for every container. `node1`–`node5`
+with fixed `container_name`, a named volume at `/data` and `restart: "no"`, plus `dashboard` on port 8080.
+Check with `docker compose up --build` and `curl localhost:<port>/state`. **Blocked until the user installs Docker Desktop or OrbStack.**
 
-### T21 · Dashboard backend
-`dashboard/app.py`, `tests/test_dashboard.py` (fake nodes; the Docker socket calls can be stubbed).
-
-### T22 · Dashboard UI
-`dashboard/static/index.html`. Plain HTML/CSS/JS, no CDN. See the mockup in `.lavish/design.html` §7.
+### T21 · Dashboard
+`dashboard/app.py`, `dashboard/static/index.html`. **Budget: about 80 lines of Python and 250 lines of HTML/CSS/JS. No tests.**
+- `app.py`: serve the page; `GET /api/cluster` (ask every node for `/state`, 300 ms timeout, no answer = down);
+  `POST /api/write` (send to the leader, follow one 421); `POST /api/partition {groups}`; `POST /api/heal`.
+- `index.html`: plain HTML/CSS/JS, polling every 500 ms. One card per node (role, term, up/down, log boxes solid when committed and
+  dashed when not, KV contents), a write box, partition presets (isolate leader / leader + 1 | rest / heal), and a merged event list.
+- **Cut for simplicity:** Kill/Start buttons and the Docker socket (kill and start nodes from a terminal with
+  `docker compose kill node3` / `docker compose start node3`), and the auto-write toggle.
 
 ### T23 · README
-`README.md`. Design summary with the trade-offs, how to run the tests and the demo, the four demo scenarios, and how AI was used
-(summarized from `AI_NOTES.md`).
+`README.md`. **Budget: about 120 lines.** What it is, how to run the tests and the demo, the design in a few paragraphs with the main
+trade-offs, the four demo scenarios with the terminal commands, known limitations, and how AI was used (summarized from `AI_NOTES.md`).
