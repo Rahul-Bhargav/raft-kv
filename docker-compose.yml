@@ -1,5 +1,5 @@
-# Five Raft nodes, one image. Each node keeps its term, vote and log in its own volume,
-# so a killed node comes back with its state. Reset everything with: docker compose down -v
+# Five Raft nodes and the dashboard (localhost:8080), one image. Each node keeps its term, vote and log
+# in its own volume, so a killed node comes back with its state. Reset everything with: docker compose down -v
 x-node: &node
   build: .
   image: raft-kv
@@ -38,6 +38,12 @@ services:
     environment: { NODE_ID: node5, PEERS: *peers }
     volumes: ["node5:/data"]
     ports: ["8005:8000"]
+  dashboard:
+    <<: *node
+    container_name: dashboard
+    command: python -m dashboard.app
+    environment: { NODES: *peers }
+    ports: ["8080:8080"]
 
 volumes:
   node1:

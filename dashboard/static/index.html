@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Raft KV demo</title>
+<style>
+  body { margin: 0 auto; max-width: 1200px; padding: 20px; background: #16181d; color: #d6d9df;
+         font: 14px/1.45 system-ui, sans-serif; }
+  h1 { font-size: 20px; margin: 0 0 14px; }
+  h2 { font-size: 12px; margin: 20px 0 6px; color: #8a90a0; text-transform: uppercase; letter-spacing: .06em; }
+  code, .mono { font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
+  input, button { font: inherit; color: inherit; background: #20232b; border: 1px solid #3a3f4c;
+                  border-radius: 6px; padding: 6px 10px; }
+  input { width: 90px; }
+  button { cursor: pointer; }
+  button:hover { border-color: #8ab4f8; }
+  .controls, .controls form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .controls form { margin-right: 16px; }
+  .hint, .meta, #result { color: #8a90a0; font-size: 12px; }
+  #nodes { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+  .card { background: #1d2027; border: 1px solid #343946; border-radius: 8px; padding: 12px; }
+  .card.leader { border-color: #5fb878; }
+  .card.down { opacity: .4; border-style: dashed; }
+  .head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+  .role { font-size: 11px; text-transform: uppercase; padding: 1px 8px; border-radius: 10px;
+          background: #343946; }
+  .leader .role { background: #5fb878; color: #10140f; font-weight: 700; }
+  .candidate .role { background: #e0af68; color: #10140f; }
+  .side { color: #e0af68; }
+  .log { display: flex; flex-wrap: wrap; gap: 3px; margin: 8px 0; min-height: 20px; }
+  .entry { display: inline-block; box-sizing: border-box; width: 20px; line-height: 18px; text-align: center;
+           font-size: 11px; border-radius: 4px; }
+  .entry.c { background: #3b5b8c; border: 1px solid #3b5b8c; color: #fff; }  /* committed */
+  .entry.u { border: 1px dashed #8a90a0; color: #8a90a0; }                   /* not committed yet */
+  #events { line-height: 1.7; }
+  #events b { display: inline-block; width: 56px; margin-left: 10px; }
+</style>
+</head>
+<body>
+<h1>Raft KV cluster</h1>
+<div class="controls">
+  <form id="write">
+    <input id="key" value="x" placeholder="key">
+    <input id="value" value="1" placeholder="value">
+    <button>Write</button>
+  </form>
+  <button id="isolate">Isolate leader</button>
+  <button id="split">Leader + 1 | rest</button>
+  <button id="heal">Heal</button>
+  <span id="result" class="mono"></span>
+</div>
+<p class="hint">
+  Nodes are killed and started from a terminal:
+  <code>docker compose kill node3</code> / <code>docker compose start node3</code>.
+  Each box is a log entry labelled with its term:
+  <span class="entry c">1</span> committed, <span class="entry u">1</span> not committed yet.
+</p>
+<div id="nodes"></div>
+<h2>Events (newest first)</h2>
+<div id="events" class="mono"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+// Keys and values are typed by the user, so escape them before they go into innerHTML.
+const esc = s => String(s).replace(/[&<>"]/g, c => `&#${c.charCodeAt(0)};`);
+let nodes = [];  // the latest answer from /api/cluster
+
+function post(path, body) {
+  return fetch(path, {method: "POST", body: JSON.stringify(body)});
+}
+
+function show(text) {
+  $("result").textContent = text;
+}
+
+// The same rule as app.py: of the nodes that say "leader", the highest term is the real one.
+function leader() {
+  return nodes.filter(n => n.role === "leader").sort((a, b) => b.term - a.term)[0];
+}
+
+// Nodes that block the same peers are on the same side. Sides are lettered in node order.
+function sides() {
+  const seen = [], side = {};
+  for (const n of nodes) {
+    if (!n.up || !n.blocked.length) continue;
+    const key = n.blocked.join();
+    if (!seen.includes(key)) seen.push(key);
+    side[n.id] = "ABCDE"[seen.indexOf(key)];
+  }
+  return side;
+}
+
+function card(n, side) {
+  if (!n.up) {
+    return `<div class="card down"><div class="head"><b>${n.id}</b><span class="role">down</span></div></div>`;
+  }
+  const log = n.log.map((e, i) => {
+    const kind = i < n.commit_index ? "c" : "u";  // log[i] is the entry at index i + 1
+    return `<span class="entry ${kind}" title="${i + 1}: ${esc(JSON.stringify(e.command))}">${e.term}</span>`;
+  }).join("");
+  const kv = Object.entries(n.kv).map(([k, v]) => `${esc(k)}=${esc(v)}`).join(" ");
+  return `<div class="card ${n.role}">
+    <div class="head"><b>${n.id}</b><span class="role">${n.role}</span></div>
+    <div class="meta">term ${n.term} · up${side ? ` · <span class="side">side ${side}</span>` : ""}</div>
+    <div class="log">${log}</div>
+    <div class="meta mono">commit ${n.commit_index} · ${kv || "no keys"}</div>
+  </div>`;
+}
+
+function eventLines() {
+  const all = nodes.flatMap(n => (n.events || []).map(e => ({...e, node: n.id})));
+  all.sort((a, b) => b.time - a.time);
+  return all.slice(0, 15).map(e => {
+    const time = new Date(e.time * 1000).toLocaleTimeString("en-GB");
+    return `<div>${time}<b>${e.node}</b>${e.event}</div>`;
+  }).join("");
+}
+
+async function poll() {
+  nodes = await (await fetch("/api/cluster")).json();
+  const side = sides();
+  $("nodes").innerHTML = nodes.map(n => card(n, side[n.id])).join("");
+  $("events").innerHTML = eventLines();
+}
+
+function outcome(r) {
+  if (r.status === 200) return `ok at ${r.node} (index ${r.body.index}, term ${r.body.term})`;
+  if (r.status === 421) return `redirected: ${r.node} is not the leader`;
+  if (r.status === 503) return "no node says it is the leader";
+  if (r.status === 504) return `timed out at ${r.node}: not committed within 5 s`;
+  return `no answer from ${r.node}`;
+}
+
+async function write() {
+  const key = $("key").value, value = $("value").value;
+  show(`writing ${key}=${value} ...`);
+  const r = await (await post("/api/write", {key, value})).json();
+  show(`${key}=${value}: ${outcome(r)}`);
+}
+
+// Put the leader and `extra` other nodes on one side, and everyone else on the other.
+function split(extra) {
+  const l = leader();
+  if (!l) return show("no leader to partition around");
+  const rest = nodes.map(n => n.id).filter(id => id !== l.id);
+  post("/api/partition", {groups: [[l.id, ...rest.slice(0, extra)], rest.slice(extra)]});
+}
+
+$("write").onsubmit = e => { e.preventDefault(); write(); };
+$("isolate").onclick = () => split(0);
+$("split").onclick = () => split(1);
+$("heal").onclick = () => post("/api/heal");
+setInterval(poll, 500);
+poll();
+</script>
+</body>
+</html>

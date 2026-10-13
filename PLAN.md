@@ -35,7 +35,7 @@ in a few minutes and any agent can pick it up cold. The spec is in `DESIGN.md`, 
 | T19 | ~~Client writes~~ (merged into T18) | n/a | cut |
 | T20 | `Dockerfile` + `docker-compose.yml` (**the user must install Docker first**) | T18 | done |
 | **G5** | **Gate: cluster runs in Docker** | T17–T20 | approved |
-| T21 | Dashboard: `dashboard/app.py` (about 80 lines) + `static/index.html` (about 250 lines), no tests | G5 | todo |
+| T21 | Dashboard: `dashboard/app.py` (about 80 lines) + `static/index.html` (about 250 lines), no tests | G5 | review |
 | T22 | ~~Dashboard UI~~ (merged into T21) | n/a | cut |
 | T23 | `README.md` (about 120 lines): design, trade-offs, limitations, how to run, AI usage | T21 | todo |
 | **G6** | **Gate: ready to submit** | all | waiting |
@@ -216,6 +216,7 @@ the majority side elects a leader and commits, and after healing the old leader 
   dashed when not, KV contents), a write box, partition presets (isolate leader / leader + 1 | rest / heal), and a merged event list.
 - **Cut for simplicity:** Kill/Start buttons and the Docker socket (kill and start nodes from a terminal with
   `docker compose kill node3` / `docker compose start node3`), and the auto-write toggle.
+*Notes:* 80 lines of Python and 157 of HTML/CSS/JS (`wc -l`), plus 6 lines for the `dashboard` service in `docker-compose.yml`. `/api/write` always answers 200 with `{node, status, body}`: `status` is the node's own (200, 421, 504), 0 if the node didn't answer, or our own 503 when no node says it is the leader. No HTTP session is kept: each request to a node opens its own connection. The page works out partition sides from each node's `blocked` list, so they survive a page reload. Checked live in Docker with curl and in a browser: five cards and one leader, a write on every node, all three presets (the old leader's write times out with a dashed entry while the other side elects a leader and commits; heal replaces the entry), a killed node greyed out, and 3 of 5 killed (503) then one restarted. The 421 retry needs a leader that steps down between two requests, so it was checked only against fake nodes in a scratch script. **Not handled:** a write always goes to the highest-term leader, so in a partition the stale leader gets dashboard writes only until the other side elects (after that, `curl` its own port); a node that is down misses a partition or heal call, and a restarted node comes back with nothing blocked; "Leader + 1" takes the first other node in the list, even one that is down; a killed node's events leave the list (they live in its memory); if the dashboard itself stops, the page keeps its last picture without a warning; a malformed request body is a 500.
 
 ### T23 · README
 `README.md`. **Budget: about 120 lines.** What it is, how to run the tests and the demo, the design in a few paragraphs with the main
