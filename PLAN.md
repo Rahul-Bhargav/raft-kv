@@ -35,10 +35,10 @@ in a few minutes and any agent can pick it up cold. The spec is in `DESIGN.md`, 
 | T19 | ~~Client writes~~ (merged into T18) | n/a | cut |
 | T20 | `Dockerfile` + `docker-compose.yml` (**the user must install Docker first**) | T18 | done |
 | **G5** | **Gate: cluster runs in Docker** | T17–T20 | approved |
-| T21 | Dashboard: `dashboard/app.py` (about 80 lines) + `static/index.html` (about 250 lines), no tests | G5 | review |
+| T21 | Dashboard: `dashboard/app.py` (about 80 lines) + `static/index.html` (about 250 lines), no tests | G5 | done |
 | T22 | ~~Dashboard UI~~ (merged into T21) | n/a | cut |
-| T23 | `README.md` (about 120 lines): design, trade-offs, limitations, how to run, AI usage | T21 | review |
-| **G6** | **Gate: ready to submit** | all | waiting |
+| T23 | `README.md` (about 120 lines): design, trade-offs, limitations, how to run, AI usage | T21 | done |
+| **G6** | **Gate: ready to submit** | all | approved |
 
 ## How to work a task (any agent)
 
