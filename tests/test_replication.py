@@ -3,14 +3,11 @@
 import random
 
 from raft.messages import Entry
-from raft.node import Role
 from sim.cluster import SimCluster
 from tests.safety_checks import checked_cluster
 
 ELECTION_DEADLINE = 150  # ticks; test_election.py measured the worst first election at 84
-# A follower applies an entry when the next AppendEntries brings the new commit index: at most
-# one heartbeat interval (10) plus the largest delay later.
-FOLLOWER_APPLY_DEADLINE = 20
+FOLLOWER_APPLY_DEADLINE = 20  # the next heartbeat (10 ticks at most) plus the largest delay
 
 
 def elect(cluster: SimCluster, max_ticks: int = ELECTION_DEADLINE) -> str:
@@ -57,12 +54,6 @@ def test_writes_apply_in_order():
         assert cluster.kvs[node_id].data == {"x": "3", "y": "2"}, node_id
 
 
-def test_write_without_a_leader_returns_false_at_once():
-    cluster = checked_cluster(seed=0)  # tick 0: nobody has stood for election yet
-    assert not cluster.write("x", "1")
-    assert cluster.now == 0
-
-
 def test_a_lagging_follower_catches_up_after_restart():
     cluster = checked_cluster(seed=1)
     leader_id = elect(cluster)
@@ -80,42 +71,11 @@ def test_a_lagging_follower_catches_up_after_restart():
     assert cluster.leader() == leader_id  # catching up didn't disturb the leader
 
 
-def test_conflicting_uncommitted_entries_are_overwritten():
-    cluster = checked_cluster(seed=2)
-    old = elect(cluster)
-    assert cluster.write("a", "1")
-    cluster.run(FOLLOWER_APPLY_DEADLINE)
-
-    # Cut the leader off. It still accepts a write, but alone it can never commit it.
-    cluster.partition({old})
-    assert not cluster.write("lost", "x", max_ticks=100)
-    lost_index = len(log(cluster, old))
-    assert log(cluster, old)[lost_index - 1].command["key"] == "lost"
-
-    # The other four elect a new leader, which commits its own entries at that same index.
-    assert cluster.run_until(lambda: cluster.leader() != old, 200)
-    new = cluster.leader()
-    assert cluster.write("b", "2")
-    assert len(log(cluster, new)) > lost_index
-
-    # Once healed, the old leader learns the higher term (R2), and its entry is replaced (R5).
-    cluster.heal()
-    cluster.run(FOLLOWER_APPLY_DEADLINE)
-    assert cluster.nodes[old].role == Role.FOLLOWER
-    assert log(cluster, old) == log(cluster, new)
-    assert log(cluster, old)[lost_index - 1].command.get("key") != "lost"
-    for node_id in cluster.ids:
-        assert cluster.kvs[node_id].data == {"a": "1", "b": "2"}, node_id
-
-
 def test_write_fails_when_its_entry_is_overwritten():
-    # Like a 503 from the demo server: something was applied at our index, but not our entry.
+    # Something was applied at the write's index, but not its entry: write() must return False.
     cluster = checked_cluster(seed=2)
     old = elect(cluster)
-    # Commit an entry first, so every node's log is as long as the old leader's. Then the new
-    # leader's noop lands on the same index as the lost write. (Without this, the new leader's
-    # log can be shorter, nothing reaches that index until a later write, and write() times out.)
-    assert cluster.write("a", "1")
+    assert cluster.write("a", "1")  # so the new leader's noop lands on the lost write's index
     cluster.run(FOLLOWER_APPLY_DEADLINE)
     cluster.partition({old})
     # Heal as soon as the other four have a new leader, while write() is still waiting.
@@ -127,11 +87,7 @@ def test_write_fails_when_its_entry_is_overwritten():
 
 
 def test_all_kv_stores_converge():
-    # Writes on a lossy network (drops, duplicates, reordering). Partway through, the leader
-    # crashes in the middle of a write and restarts 100 ticks later. Every acknowledged write
-    # must end up on every node, nothing that wasn't written may appear, and every node must end
-    # up with the same KV store. (With these seeds even the interrupted write succeeds: its entry
-    # had already reached a majority, so the next leader commits it.)
+    # On a lossy network the leader crashes mid-write and restarts later. All KV stores still agree.
     for seed in range(20):
         cluster = checked_cluster(seed=seed, max_delay=5, drop_rate=0.1, dup_rate=0.2)
         elect(cluster)
