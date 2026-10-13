@@ -50,13 +50,15 @@
   /* Task status in the progress strip (section 11) */
   .fig .st-done { fill: color-mix(in oklab, var(--color-success) 45%, var(--color-base-200)); stroke: var(--color-success); stroke-width: 1.5; }
   .fig .st-review { fill: color-mix(in oklab, var(--color-warning) 30%, var(--color-base-200)); stroke: var(--color-warning); stroke-width: 2.5; }
-  .fig .st-todo { fill: none; stroke: color-mix(in oklab, var(--color-base-content) 45%, transparent); stroke-width: 1.5; stroke-dasharray: 4 3; }
+  .fig .st-cut { fill: none; stroke: color-mix(in oklab, var(--color-base-content) 35%, transparent); stroke-width: 1.2; stroke-dasharray: 1.5 3; }
+  .fig .lbl-cut { fill: var(--color-base-content); opacity: .5; font: 12px ui-sans-serif, system-ui, sans-serif; text-decoration: line-through; }
   .fig .t-warn { fill: var(--color-warning); font: 600 14px ui-sans-serif, system-ui, sans-serif; }
 </style>
 <script type="application/json" data-lavish-revisions>
 [{ "id": "r1", "label": "Round 1", "timestamp": "2026-10-06T18:40:08Z", "summary": "Answered: why Python 3.12, how take_messages/take_committed work, AppendEntries keys, storage kept to one fsynced file" },
  { "id": "r2", "label": "Round 2", "timestamp": "2026-10-06T18:55:00Z", "summary": "Threads question: single event loop, one step() helper; outbox vs callbacks comparison; added Q10" },
- { "id": "r3", "label": "Round 3", "timestamp": "2026-10-12T00:00:00Z", "summary": "Draft 4: brought up to date with the code. Status, real tests and evidence, plan with progress, decisions made" }]
+ { "id": "r3", "label": "Round 3", "timestamp": "2026-10-12T00:00:00Z", "summary": "Draft 4: brought up to date with the code. Status, real tests and evidence, plan with progress, decisions made" },
+ { "id": "r4", "label": "Round 4", "timestamp": "2026-10-13T00:00:00Z", "summary": "Draft 5: the final state. Server, Docker and dashboard built, scope cut for simplicity, real test counts" }]
 </script>
 </head>
 <body class="bg-base-100 text-base-content">
@@ -81,9 +83,9 @@
   <!-- Header -->
   <header class="space-y-5">
     <div class="flex flex-wrap gap-2">
-      <span class="badge badge-soft badge-primary">Design proposal · draft 4</span>
-      <span class="badge badge-soft">2026-10-12</span>
-      <span class="badge badge-soft badge-warning" data-lavish-revision="r3">Gates 1–3 approved · Gate 4 waiting for review (§11)</span>
+      <span class="badge badge-soft badge-primary">Design proposal · draft 5</span>
+      <span class="badge badge-soft">2026-10-13</span>
+      <span class="badge badge-soft badge-warning" data-lavish-revision="r4">Gates 1–5 approved · Gate 6 (ready to submit) waiting for review (§11)</span>
     </div>
     <h1 class="text-3xl sm:text-4xl font-bold leading-tight">Raft KV: design</h1>
     <p class="text-lg opacity-85 max-w-3xl">
@@ -91,14 +93,15 @@
       Correctness is shown by a deterministic simulator with randomized fault injection.
       A demo runs the <em>same</em> code in Docker containers with a live dashboard.
     </p>
-    <p class="opacity-85 max-w-3xl" data-lavish-revision="r3">
-      <strong>Where it stands:</strong> the Raft core, the simulator and the correctness tests are written and passing.
-      The Docker demo and the dashboard are not started. Sections 6 and 7 are still the design for that part.
+    <p class="opacity-85 max-w-3xl" data-lavish-revision="r4">
+      <strong>Where it stands:</strong> everything is built: the Raft core, the simulator, the correctness tests, the node server, the Docker cluster and the dashboard.
+      The demo was run live in Docker. The dashboard and the README are in review, and Gate 6 (ready to submit) is waiting for you.
+      After draft 4 the remaining scope was cut for simplicity (§14).
     </p>
-    <div class="stats stats-vertical sm:stats-horizontal bg-base-200 w-full" data-lavish-revision="r3">
-      <div class="stat"><div class="stat-title">Tests passing</div><div class="stat-value text-primary">1,243</div><div class="stat-desc">whole suite ≈ 13 s</div></div>
-      <div class="stat"><div class="stat-title">Tasks done</div><div class="stat-value">11 of 24</div><div class="stat-desc">5 in review · 8 to do</div></div>
-      <div class="stat"><div class="stat-title">Gates approved</div><div class="stat-value">3 of 6</div><div class="stat-desc">Gate 4 is waiting</div></div>
+    <div class="stats stats-vertical sm:stats-horizontal bg-base-200 w-full" data-lavish-revision="r4">
+      <div class="stat"><div class="stat-title">Tests passing</div><div class="stat-value text-primary">1,117</div><div class="stat-desc">whole suite ≈ 13 s</div></div>
+      <div class="stat"><div class="stat-title">Tasks done</div><div class="stat-value">19 of 24</div><div class="stat-desc">2 in review · 3 cut</div></div>
+      <div class="stat"><div class="stat-title">Gates approved</div><div class="stat-value">5 of 6</div><div class="stat-desc">Gate 6 is waiting</div></div>
       <div class="stat"><div class="stat-title">Safety properties</div><div class="stat-value">5</div><div class="stat-desc">checked after every step</div></div>
       <div class="stat"><div class="stat-title">Fuzz seeds</div><div class="stat-value">1,000</div><div class="stat-desc">per run · 0–9,999 all pass</div></div>
     </div>
@@ -136,7 +139,7 @@
         <div class="card-body">
           <h3 class="card-title text-base">Done means: tests</h3>
           <div class="mockup-code text-sm"><pre data-prefix="$"><code>uv run pytest</code></pre></div>
-          <p class="text-sm opacity-80">All 1,243 tests, including the randomized fault-injection run, finish in about 13 s. Docker isn't needed.
+          <p class="text-sm opacity-80">All 1,117 tests, including the randomized fault-injection run, finish in about 13 s. Docker isn't needed.
           Any failure prints the seed that reproduces it exactly.</p>
         </div>
       </div>
@@ -145,44 +148,41 @@
           <h3 class="card-title text-base">Done means: demo</h3>
           <div class="mockup-code text-sm"><pre data-prefix="$"><code>docker compose up --build</code></pre></div>
           <p class="text-sm opacity-80">Open <code>localhost:8080</code> and watch 5 nodes elect a leader. Then run the four failure
-          scenarios from the dashboard.</p>
+          scenarios (§8): writes and partitions from the dashboard, kill and start from a terminal.</p>
         </div>
       </div>
     </div>
   </section>
 
   <!-- 2 Status -->
-  <section id="today" class="space-y-4" data-lavish-revision="r3">
-    <h2 class="text-2xl font-bold">2 · Where things stand <span class="text-sm font-normal opacity-60">(from PLAN.md, 2026-10-12)</span></h2>
-    <p class="opacity-85 max-w-3xl">Everything up to Gate 3 is approved. The correctness evidence (T12–T15) is committed and waiting at Gate 4, and nothing past that gate starts until you approve it. The full list with statuses is in <a href="#plan" class="link">§11</a>.</p>
+  <section id="today" class="space-y-4" data-lavish-revision="r4">
+    <h2 class="text-2xl font-bold">2 · Where things stand <span class="text-sm font-normal opacity-60">(from PLAN.md, 2026-10-13)</span></h2>
+    <p class="opacity-85 max-w-3xl">Everything up to Gate 5 is approved. The dashboard (T21) and the README (T23) are committed and waiting at Gate 6, the last gate. Three tasks (T16, T19, T22) were cut for simplicity (§14). The full list with statuses is in <a href="#plan" class="link">§11</a>.</p>
     <div class="grid md:grid-cols-3 gap-4">
       <div class="card bg-base-200 card-border border-success/50" id="status-done"><div class="card-body gap-2">
-        <h3 class="card-title text-base">Done <span class="badge badge-soft badge-success badge-sm">11 tasks</span></h3>
+        <h3 class="card-title text-base">Done <span class="badge badge-soft badge-success badge-sm">19 tasks</span></h3>
         <ul class="list-disc pl-5 text-sm space-y-1 opacity-90">
-          <li><strong>T01–T05</strong> scaffold, messages, storage, KV store, simulated network (Gate 1 approved)</li>
-          <li><strong>T06–T08</strong> leader election and <code>SimCluster</code> (Gate 2 approved)</li>
-          <li><strong>T09–T11</strong> log replication, commit, <code>SimCluster.write</code> (Gate 3 approved)</li>
+          <li><strong>T01–T05</strong> scaffold, messages, storage, KV store, simulated network (Gate 1)</li>
+          <li><strong>T06–T08</strong> leader election and <code>SimCluster</code> (Gate 2)</li>
+          <li><strong>T09–T11</strong> log replication, commit, <code>SimCluster.write</code> (Gate 3)</li>
+          <li><strong>T12–T15</strong> failure tests, the batch cap, Figure 8, safety checks, fuzz (Gate 4)</li>
+          <li><strong>T17, T18, T20</strong> <code>FileStorage</code>, the node server, Dockerfile and compose (Gate 5)</li>
         </ul>
       </div></div>
       <div class="card bg-base-200 card-border border-warning" id="status-review"><div class="card-body gap-2">
-        <h3 class="card-title text-base">In review <span class="badge badge-warning badge-sm">5 tasks</span></h3>
+        <h3 class="card-title text-base">In review <span class="badge badge-warning badge-sm">2 tasks</span></h3>
         <ul class="list-disc pl-5 text-sm space-y-1 opacity-90">
-          <li><strong>T12</strong> failure tests (restart, minority leader, heal, no majority)</li>
-          <li><strong>T13a</strong> the optional batch cap</li>
-          <li><strong>T13</strong> the Figure 8 test</li>
-          <li><strong>T14</strong> the safety checks</li>
-          <li><strong>T15</strong> the fuzz test</li>
+          <li><strong>T21</strong> the dashboard</li>
+          <li><strong>T23</strong> the README</li>
         </ul>
-        <p class="text-sm"><strong>Gate 4</strong> is waiting for you.</p>
+        <p class="text-sm"><strong>Gate 6</strong> is waiting for you.</p>
       </div></div>
-      <div class="card bg-base-200 card-border" id="status-todo"><div class="card-body gap-2">
-        <h3 class="card-title text-base">To do <span class="badge badge-ghost badge-outline badge-sm">8 tasks</span></h3>
+      <div class="card bg-base-200 card-border border-dashed" id="status-cut"><div class="card-body gap-2">
+        <h3 class="card-title text-base">Cut <span class="badge badge-ghost badge-outline badge-sm">3 tasks</span></h3>
         <ul class="list-disc pl-5 text-sm space-y-1 opacity-90">
           <li><strong>T16</strong> duplicate detection</li>
-          <li><strong>T17–T19</strong> <code>FileStorage</code>, the node server, client writes</li>
-          <li><strong>T20</strong> Dockerfile and compose (needs Docker)</li>
-          <li><strong>T21–T22</strong> dashboard backend and page</li>
-          <li><strong>T23</strong> README</li>
+          <li><strong>T19</strong> client writes (built inside T18)</li>
+          <li><strong>T22</strong> dashboard page (built inside T21)</li>
         </ul>
       </div></div>
     </div>
@@ -190,10 +190,10 @@
       <table class="table table-sm">
         <thead><tr><th>Item</th><th>State</th><th>What it means</th></tr></thead>
         <tbody>
-          <tr><td class="whitespace-nowrap" style="overflow-wrap:normal">Tests</td><td><strong>1,243 passing</strong>, whole suite ≈ 13 s</td><td>Run with <code>uv run pytest</code>. 1,000 of them are fuzz seeds (§9).</td></tr>
-          <tr><td class="whitespace-nowrap" style="overflow-wrap:normal">Python</td><td><strong>3.12 through uv</strong>, installed</td><td>Matches the image the demo will use (Q6).</td></tr>
+          <tr><td class="whitespace-nowrap" style="overflow-wrap:normal">Tests</td><td><strong>1,117 passing</strong>, whole suite ≈ 13 s</td><td>Run with <code>uv run pytest</code>. 1,000 of them are fuzz seeds (§9).</td></tr>
+          <tr><td class="whitespace-nowrap" style="overflow-wrap:normal">Python</td><td><strong>3.12 through uv</strong>, installed</td><td>Matches the image the demo uses (Q6).</td></tr>
           <tr><td class="whitespace-nowrap" style="overflow-wrap:normal">Repo</td><td>Pushed to GitHub: <code>git@github.com:Rahul-Bhargav/raft-kv.git</code>, branch <code>main</code></td><td>One commit per task (<code>Txx: ...</code>), plus the gate approvals and a few review fixes.</td></tr>
-          <tr><td class="whitespace-nowrap" style="overflow-wrap:normal">Docker</td><td><strong>Still not installed</strong></td><td>Needed from <strong>T20</strong> on (Dockerfile and compose). Install Docker Desktop or OrbStack before then. Everything earlier, including every test, runs without it.</td></tr>
+          <tr><td class="whitespace-nowrap" style="overflow-wrap:normal">Docker</td><td><strong>Installed</strong> (Docker 29.8.2)</td><td>The demo was run live: a leader is elected, a follower redirects a write (421), a killed leader is replaced in 3.6 s, a restarted node catches up from its saved log, and the partition scenario works through the dashboard. The tests never need Docker.</td></tr>
           <tr><td class="whitespace-nowrap" style="overflow-wrap:normal">Node.js</td><td>v24.21.0 via nvm</td><td>Only used by Lavish. The project doesn't use it.</td></tr>
         </tbody>
       </table>
@@ -339,20 +339,21 @@ class RaftNode:
           </svg>
         </figure>
         <p class="text-sm opacity-90">All three entry points (the <code>POST /raft</code> handler, the tick loop and <code>POST /client/write</code>) go through one helper.
-        This is a sketch of the server's (T18, not built yet). The simulator already has its own: <code>SimCluster._collect</code>.</p>
-<pre class="bg-base-100 rounded-box p-4 overflow-x-auto text-sm leading-relaxed" data-lavish-revision="r3"><code>def step(self, call):
-    result = call()                          # node.receive / tick / propose: plain function, no await
-    for m in self.node.take_messages():
-        asyncio.create_task(self.post(m))    # sends run later as their own tasks and never touch the node
-    for index, entry in self.node.take_committed():
+        This is the server's helper in <code>server/node_server.py</code>, shortened. The simulator has its own: <code>SimCluster._collect</code>.</p>
+<pre class="bg-base-100 rounded-box p-4 overflow-x-auto text-sm leading-relaxed" data-lavish-revision="r4"><code>def step(self, call, *args):
+    result = call(*args)                     # node.receive / tick / propose: plain function, no await
+    for msg in self.node.take_messages():
+        if msg.dst not in self.blocked:      # the partition filter
+            asyncio.create_task(self.send(msg))  # sends run later as their own tasks and never touch the node
+    for _index, entry in self.node.take_committed():
         self.kv.apply(entry.command)         # update the KV store
-        self.resolve_writes(index, entry.term)   # wake any client write waiting on this index
     for event in self.node.take_events():
-        self.events.append((time.time(), event))  # stamped with wall-clock time for the dashboard
+        self.events.append({"time": time.time(), "event": event})  # stamped with wall-clock time
+    del self.events[:-MAX_EVENTS]            # keep the last 20
     return result
 
 # for example, inside the POST /raft handler:
-self.step(lambda: self.node.receive(msg))</code></pre>
+self.step(self.node.receive, msg)</code></pre>
         <p class="text-sm opacity-90">There's one rule: <strong>never put an <code>await</code> between calling the node and collecting its outputs.</strong> With one helper, that rule lives in one place.
         This is also why the design uses asyncio. A threaded web server would need a lock around the node.</p>
 
@@ -367,7 +368,7 @@ self.step(lambda: self.node.receive(msg))</code></pre>
             <ul class="space-y-1 opacity-90">
               <li>✅ Messages <em>can't</em> leave before the handler has finished saving term, vote and log. R1 is guaranteed by the structure.</li>
               <li>✅ The node holds no reference to the network. A unit test calls <code>receive()</code> and inspects <code>take_messages()</code>.</li>
-              <li>➖ A few extra lines in the node, plus the collecting step in each driver (<code>SimCluster._collect</code> today, <code>step()</code> in the server).</li>
+              <li>➖ A few extra lines in the node, plus the collecting step in each driver (<code>SimCluster._collect</code> in the simulator, <code>step()</code> in the server).</li>
             </ul>
           </div>
           <div class="rounded-box bg-base-100 p-3 text-sm space-y-2" id="opt-callbacks">
@@ -479,7 +480,7 @@ self.send(reply)            # inside the node</code></pre>
   <!-- 5 Simulator -->
   <section id="sim" class="space-y-4" data-lavish-revision="r3">
     <h2 class="text-2xl font-bold">5 · The simulator <code class="text-lg">sim/</code></h2>
-    <p class="opacity-85 max-w-3xl">Built: <code>SimNetwork</code> (T05), <code>SimCluster</code> (T08) and <code>write</code> (T11) are approved, and the <code>time_out()</code> helper arrived with T12, which is in review. It runs a whole cluster on a fake clock and a fake network, so a run is fast and always reproducible from its seed. Every cluster test in §9 uses it.</p>
+    <p class="opacity-85 max-w-3xl"><code>SimNetwork</code> (T05), <code>SimCluster</code> (T08), <code>write</code> (T11) and the <code>time_out()</code> helper (T12) are approved. It runs a whole cluster on a fake clock and a fake network, so a run is fast and always reproducible from its seed. Every cluster test in §9 uses it.</p>
 
     <figure class="card bg-base-200 card-border p-4">
       <svg class="fig" viewBox="0 0 900 190" role="img" aria-labelledby="s1-title">
@@ -541,8 +542,8 @@ self.send(reply)            # inside the node</code></pre>
         <p class="text-sm opacity-90">It writes through the current leader, as a client would: propose on the leader, then run until <strong>that same node</strong> has applied the entry's index. It returns <code>True</code> only if the entry applied there has the term it was proposed in. That is the simulator's version of the server's <code>200</code>, and it is what the tests call an <strong>acknowledged write</strong>.</p>
         <ul class="list-disc pl-5 text-sm space-y-1 opacity-90">
           <li>No leader: <code>False</code> at once.</li>
-          <li>A later leader overwrote the entry: <code>False</code> (the server's <code>503</code>).</li>
-          <li>Not applied within <code>max_ticks</code>: <code>False</code> (the server's <code>504</code>). The entry may still be applied later.</li>
+          <li>A later leader overwrote the entry: <code>False</code> (the server answers <code>504</code>).</li>
+          <li>Not applied within <code>max_ticks</code>: <code>False</code> (also <code>504</code>). The entry may still be applied later.</li>
         </ul>
       </div></div>
       <div class="card bg-base-200 card-border border-primary/50" id="sim-checked"><div class="card-body">
@@ -581,17 +582,14 @@ self.send(reply)            # inside the node</code></pre>
           <text class="lbl" x="696" y="176" text-anchor="end">due at tick 8, after the heal: delivered</text></g>
       </svg>
     </figure>
-    <p class="text-sm opacity-80 max-w-3xl">Only the moment a message is due matters: that is when the sender's group and the receiver's group are compared. The tests <code>test_partition_is_checked_at_delivery_time</code>, <code>test_message_sent_during_a_partition_arrives_if_healed_before_delivery</code> and <code>test_heal_restores_delivery_but_dropped_messages_stay_dropped</code> pin it down.</p>
+    <p class="text-sm opacity-80 max-w-3xl">Only the moment a message is due matters: that is when the sender's group and the receiver's group are compared. The tests <code>test_partition_is_checked_at_delivery_time</code> and <code>test_heal_restores_delivery_but_dropped_messages_stay_dropped</code> pin it down.</p>
   </section>
 
   <!-- 6 Runtime -->
   <section id="runtime" class="space-y-5">
-    <h2 class="text-2xl font-bold">6 · The node runtime <code class="text-lg">server/</code> <span class="badge badge-warning badge-sm align-middle">not built yet · T17–T19</span></h2>
-    <div role="alert" class="alert alert-soft alert-warning text-sm" data-lavish-revision="r3" id="runtime-not-built">
-      <span><strong>Not built yet.</strong> <code>server/</code> is an empty package. This section is the design for T17 (<code>FileStorage</code>), T18 (the node server) and T19 (client writes), with the endpoint table corrected to match <code>DESIGN.md</code>.
-      Those tasks start after you approve Gate 4. Docker (T20) comes after them.</span>
-    </div>
-    <figure class="card bg-base-200 card-border p-4">
+    <h2 class="text-2xl font-bold">6 · The node runtime <code class="text-lg">server/</code></h2>
+    <p class="opacity-85 max-w-3xl" data-lavish-revision="r4">Built and approved at Gate 5: <code>server/node_server.py</code> (143 lines, 4 tests) and <code>server/file_storage.py</code> (41 lines, 2 tests). One <code>NodeServer</code> wraps one <code>RaftNode</code> in an aiohttp app.</p>
+    <figure class="card bg-base-200 card-border p-4" data-lavish-revision="r4">
       <svg class="fig" viewBox="0 0 900 340" role="img" aria-labelledby="d3-title">
         <title id="d3-title">Inside one node container</title>
         <rect class="frame" x="8" y="8" width="884" height="324" rx="14"/>
@@ -616,9 +614,9 @@ self.send(reply)            # inside the node</code></pre>
         <g id="d3-out-kv"><title>Key-value store</title>
           <rect class="box" x="680" y="130" width="190" height="46" rx="10"/>
           <text class="tm" x="775" y="158" text-anchor="middle">KV store</text></g>
-        <g id="d3-out-pending"><title>Pending client writes waiting for commit</title>
+        <g id="d3-out-reply"><title>Reply to the client: 200, or 504 after 5 s</title>
           <rect class="box" x="680" y="200" width="190" height="46" rx="10"/>
-          <text class="tm" x="775" y="228" text-anchor="middle">pending writes</text></g>
+          <text class="tm" x="775" y="228" text-anchor="middle">reply 200 / 504</text></g>
         <g id="d3-storage"><title>FileStorage on the node's volume</title>
           <rect class="box-accent" x="330" y="250" width="240" height="46" rx="10"/>
           <text class="tm" x="450" y="278" text-anchor="middle">FileStorage → /data</text></g>
@@ -630,20 +628,19 @@ self.send(reply)            # inside the node</code></pre>
           <text class="lbl" x="612" y="96" text-anchor="middle">send</text>
           <line class="edge-primary" x1="570" y1="160" x2="676" y2="154" marker-end="url(#arrow-primary)"/>
           <text class="lbl" x="622" y="148" text-anchor="middle">apply</text>
-          <line class="edge" x1="775" y1="176" x2="775" y2="197" marker-end="url(#arrow)"/>
-          <text class="lbl" x="784" y="192">resolve</text>
           <line class="edge-primary" x1="450" y1="210" x2="450" y2="246" marker-end="url(#arrow-primary)"/>
           <text class="lbl" x="460" y="233">persist first (R1)</text>
           <path class="edge dash" d="M125,246 L125,315 L775,315 L775,250" marker-end="url(#arrow)"/>
-          <text class="lbl" x="660" y="308" text-anchor="middle">waits on a future</text>
+          <text class="lbl" x="660" y="308" text-anchor="middle">polls each tick, up to 5 s</text>
         </g>
       </svg>
     </figure>
-    <ul class="list-disc pl-6 space-y-1 opacity-90 max-w-3xl text-sm">
+    <ul class="list-disc pl-6 space-y-1 opacity-90 max-w-3xl text-sm" data-lavish-revision="r4">
       <li>Every call into <code>RaftNode</code> happens on the one event loop, so no locks are needed.</li>
-      <li>Every call into the node goes through one <code>step()</code> helper. After the call it sends <code>take_messages()</code> over HTTP (fire-and-forget, 500 ms timeout, errors ignored, since Raft already tolerates lost messages), applies <code>take_committed()</code> to the KV store, resolves pending writes, and stamps <code>take_events()</code> with wall-clock time.</li>
+      <li>Every call into the node goes through one <code>step()</code> helper. After the call it sends <code>take_messages()</code> over HTTP (fire-and-forget, 500 ms timeout, errors ignored, since Raft already tolerates lost messages), applies <code>take_committed()</code> to the KV store, and keeps the last 20 <code>take_events()</code>, each with a wall-clock time.</li>
+      <li><strong>Client writes:</strong> <code>/client/write</code> proposes on the leader, then checks once per tick, for up to 5 s, whether that index has been applied. It is a plain polling loop, with no futures.</li>
       <li><strong>Partition filter:</strong> each node keeps a set of blocked peers and drops messages going to or coming from them. Control endpoints (<code>/state</code>, <code>/admin</code>, <code>/client</code>) aren't filtered.</li>
-      <li><strong>Storage:</strong> in memory for tests, one file for the demo. See below.</li>
+      <li><strong>Storage:</strong> in memory for tests, one file for the demo: <code>&lt;data_dir&gt;/&lt;node_id&gt;.json</code>. See below.</li>
     </ul>
 
     <div class="card bg-base-200 card-border" data-lavish-revision="r1" id="storage">
@@ -665,16 +662,16 @@ self.send(reply)            # inside the node</code></pre>
           <li><strong>It forgets entries it acknowledged.</strong> The leader counted that acknowledgement toward a majority. If enough nodes forget, a committed write disappears.</li>
         </ol>
         <p class="text-sm opacity-90">This is rule R1, and "what happens when a node restarts?" is very likely a panel question. With one crash at a time the demo would probably look fine, but it wouldn't be correct Raft.</p>
-        <p class="text-sm opacity-90"><strong>Kept simple, as you asked:</strong> one file and an fsync on every change. This is the whole design (T17 builds it):</p>
-<pre class="bg-base-100 rounded-box p-4 overflow-x-auto text-sm leading-relaxed"><code>def _save(self) -&gt; None:              # called on every change to term, vote or log
-    tmp = self.path + ".tmp"
-    with open(tmp, "w") as f:
-        json.dump({"term": self.term, "voted_for": self.voted_for, "log": self.log}, f)
+        <p class="text-sm opacity-90"><strong>Kept simple, as you asked:</strong> one file and an fsync on every change. <code>FileStorage</code> extends <code>MemoryStorage</code> and calls this after each of its three changing methods:</p>
+<pre class="bg-base-100 rounded-box p-4 overflow-x-auto text-sm leading-relaxed" data-lavish-revision="r4"><code>def _save(self) -&gt; None:              # called on every change to term, vote or log
+    log = [asdict(e) for e in self._log[1:]]   # without the index-0 placeholder
+    with open(self._path + ".tmp", "w") as f:
+        json.dump({"term": self._term, "voted_for": self._voted_for, "log": log}, f)
         f.flush()
         os.fsync(f.fileno())             # on disk before we return
-    os.replace(tmp, self.path)           # swap in: the file is always old or new, never half-written</code></pre>
+    os.replace(self._path + ".tmp", self._path)   # swap in: the file is always old or new, never half-written</code></pre>
         <div role="alert" class="alert alert-soft alert-info text-sm">
-          <span><strong>One concern, so I kept two extra lines:</strong> if we write straight over <code>raft.json</code> and the node is killed mid-write, it's left with half a JSON file and can't start again.
+          <span><strong>One concern, so I kept two extra lines:</strong> if we write straight over the node's file and it is killed mid-write, it's left with half a JSON file and can't start again.
           Writing to a temp file and swapping it in costs two lines and removes that problem. Everything else (append-only logs, directory fsync, checksums) is left out on purpose.</span>
         </div>
         <p class="text-xs opacity-75">Side note for the panel: a killed container's writes are already in the operating system's cache, so in this demo fsync only matters if the whole machine loses power. We do it anyway because it's one line and it's what Raft requires.</p>
@@ -687,8 +684,7 @@ self.send(reply)            # inside the node</code></pre>
         <thead><tr><th>Endpoint</th><th>Body → response</th><th>Notes</th></tr></thead>
         <tbody>
           <tr><td class="whitespace-nowrap" style="overflow-wrap:normal"><code>POST /raft</code></td><td>One Raft message → <code>204</code></td><td>Dropped if the sender is blocked</td></tr>
-          <tr data-lavish-revision="r3"><td class="whitespace-nowrap" style="overflow-wrap:normal"><code>POST /client/write</code></td><td><code>{key, value}</code>, or with <code>client_id, seq</code> → <code>200 {index, term}</code></td><td><strong>200</strong> when the entry is applied with the same term. Not the leader → <code>421 {leader}</code>. <strong>503</strong> only when that index is applied with a <em>different</em> term (the entry was overwritten). <strong>504</strong> if it is not applied within 5 s.
-            Losing leadership is <strong>not</strong> an immediate 503: the entry may still be committed by the new leader, so the node keeps waiting. A write that was lost but whose index nothing has reached yet also ends as a 504.</td></tr>
+          <tr data-lavish-revision="r4"><td class="whitespace-nowrap" style="overflow-wrap:normal"><code>POST /client/write</code></td><td><code>{key, value}</code> → <code>200 {index, term}</code></td><td>After proposing, the handler checks once per tick for up to 5 s. <strong>200</strong> if that index was applied with the same term. Not the leader → <code>421 {leader}</code>. Otherwise <strong>504</strong>: it timed out, or a later leader overwrote the entry. A 504 doesn't prove the write is lost, since the entry may still commit later.</td></tr>
           <tr><td class="whitespace-nowrap" style="overflow-wrap:normal"><code>GET /state</code></td><td>→ id, role, term, voted_for, leader_id, commit_index, last_applied, log, kv, blocked, events</td><td>Read by the dashboard</td></tr>
           <tr><td class="whitespace-nowrap" style="overflow-wrap:normal"><code>POST /admin/partition</code></td><td><code>{blocked: [ids]}</code> → <code>204</code></td><td>Send <code>[]</code> to heal</td></tr>
         </tbody>
@@ -734,15 +730,15 @@ self.send(reply)            # inside the node</code></pre>
           <text class="tm" x="215" y="290" text-anchor="middle">200 {index: 7, term: 4}</text></g>
       </svg>
     </figure>
-    <p class="text-sm opacity-80 max-w-3xl">The leader replies only after the entry is <em>applied</em>. If index 7 ends up applied with a different term (it was overwritten), the client gets <code>503</code>. If index 7 isn't applied within 5 s, it gets <code>504</code>. Losing leadership alone decides nothing: the new leader may still commit the entry (a <code>200</code>) or overwrite it (a <code>503</code>), so the node keeps waiting. A client never sees "ok" for a write that could still be lost.</p>
+    <p class="text-sm opacity-80 max-w-3xl" data-lavish-revision="r4">The leader replies only after the entry is <em>applied</em>. If index 7 is applied with the same term, the client gets <code>200</code>. If a different term is applied there (the entry was overwritten), or nothing is applied within 5 s, it gets <code>504</code>. Losing leadership alone decides nothing: the new leader may still commit the entry, so the node keeps polling. A client never sees "ok" for a write that could still be lost.</p>
   </section>
 
   <!-- 7 Deploy -->
   <section id="deploy" class="space-y-5">
     <h2 class="text-2xl font-bold">7 · Docker setup and dashboard</h2>
-    <figure class="card bg-base-200 card-border p-4">
+    <figure class="card bg-base-200 card-border p-4" data-lavish-revision="r4">
       <svg class="fig" viewBox="0 0 900 400" role="img" aria-labelledby="d2-title">
-        <title id="d2-title">Containers: browser, dashboard, Docker engine, five Raft nodes</title>
+        <title id="d2-title">Containers: browser, dashboard, five Raft nodes, and your terminal for kill and start</title>
         <g id="d2-browser"><title>Your browser</title>
           <rect class="box" x="340" y="10" width="220" height="44" rx="10"/>
           <text class="t" x="450" y="37" text-anchor="middle">Browser · :8080</text></g>
@@ -750,14 +746,12 @@ self.send(reply)            # inside the node</code></pre>
           <rect class="box-accent" x="340" y="110" width="220" height="56" rx="10"/>
           <text class="t" x="450" y="134" text-anchor="middle">dashboard</text>
           <text class="tm" x="450" y="154" text-anchor="middle">polls every 500 ms</text></g>
-        <g id="d2-docker"><title>Docker Engine, reached through the mounted socket (Q2)</title>
+        <g id="d2-terminal"><title>Your terminal: kill and start nodes with docker compose (Q2)</title>
           <rect class="box" x="660" y="110" width="220" height="56" rx="10"/>
-          <text class="t" x="770" y="134" text-anchor="middle">Docker Engine</text>
-          <text class="tm" x="770" y="154" text-anchor="middle">docker.sock</text></g>
+          <text class="t" x="770" y="134" text-anchor="middle">Your terminal</text>
+          <text class="tm" x="770" y="154" text-anchor="middle">docker compose kill/start</text></g>
         <line class="edge" x1="450" y1="54" x2="450" y2="106" marker-end="url(#arrow)"/>
         <text class="lbl" x="460" y="86">page + /api/*</text>
-        <line class="edge" x1="560" y1="138" x2="656" y2="138" marker-end="url(#arrow)"/>
-        <text class="lbl" x="608" y="128" text-anchor="middle">kill · start</text>
         <line class="edge-warn" x1="770" y1="166" x2="790" y2="244" marker-end="url(#arrow-warn)"/>
         <text class="lbl-warn" x="800" y="205">any node</text>
         <g id="d2-control"><title>Control traffic: GET /state, POST /admin/partition, POST /client/write</title>
@@ -788,125 +782,119 @@ self.send(reply)            # inside the node</code></pre>
         <h3 class="card-title text-base"><code>docker-compose.yml</code></h3>
         <ul class="list-disc pl-5 text-sm space-y-1 opacity-90">
           <li>One image (<code>python:3.12-slim</code> + aiohttp) for all 6 containers. Only the start command differs.</li>
-          <li><code>node1</code>–<code>node5</code>: fixed container names, with <code>NODE_ID</code>, <code>PEERS</code> and <code>TICK_MS=100</code> set as environment variables. Each has its own named volume at <code>/data</code>, and <code>restart: "no"</code> so a killed node stays down until you start it.</li>
-          <li><code>dashboard</code>: port 8080, with <code>/var/run/docker.sock</code> mounted (Q2).</li>
+          <li><code>node1</code>–<code>node5</code>: fixed container names on host ports 8001–8005, with <code>NODE_ID</code> and <code>PEERS</code> set as environment variables (<code>TICK_MS</code> defaults to 100). Each has its own named volume at <code>/data</code>, and <code>restart: "no"</code> so a killed node stays down until you start it.</li>
+          <li><code>dashboard</code>: port 8080. It reaches the nodes only over HTTP.</li>
           <li><code>docker compose down -v</code> wipes all state between demo runs.</li>
         </ul>
       </div></div>
-      <div class="card bg-base-200 card-border"><div class="card-body">
+      <div class="card bg-base-200 card-border" data-lavish-revision="r4"><div class="card-body">
         <h3 class="card-title text-base">Dashboard API</h3>
         <ul class="text-sm space-y-1 opacity-90">
           <li><code>GET /api/cluster</code>: sends <code>GET /state</code> to every node (300 ms timeout). No answer means the node is down.</li>
-          <li><code>POST /api/write</code>: sends to the current leader and follows a <code>421</code> to the real one.</li>
+          <li><code>POST /api/write</code>: sends to the leader with the highest term and retries once on a <code>421</code>. It always answers <code>200</code> with <code>{node, status, body}</code>, where <code>status</code> is the node's own answer (the dashboard answers for itself when no node is leader).</li>
           <li><code>POST /api/partition</code>: takes <code>{groups}</code> and works out each node's blocked set.</li>
           <li><code>POST /api/heal</code></li>
-          <li><code>POST /api/nodes/{id}/kill</code>, <code>/start</code>: the Docker Engine API. Kill sends SIGKILL, so it's a real crash with no graceful shutdown.</li>
+          <li>No kill or start endpoints: nodes are killed and started from a terminal (<code>docker compose kill node3</code> / <code>docker compose start node3</code>).</li>
         </ul>
       </div></div>
     </div>
 
     <h3 class="text-lg font-semibold pt-2">Dashboard mockup: partition scenario, midway through</h3>
-    <p class="text-sm opacity-75">This is a static mockup to annotate. Each box is a log entry labelled with its term. <span class="entry c">3</span> is committed; <span class="entry u">3</span> isn't committed yet.</p>
-    <div id="mock" class="mockup-browser border border-base-content/15 bg-base-200">
+    <p class="text-sm opacity-75" data-lavish-revision="r4">This is a static mockup of <code>dashboard/static/index.html</code> to annotate. Each box is a log entry labelled with its term. <span class="entry c">3</span> is committed; <span class="entry u">3</span> isn't committed yet.</p>
+    <div id="mock" class="mockup-browser border border-base-content/15 bg-base-200" data-lavish-revision="r4">
       <div class="mockup-browser-toolbar"><div class="input">localhost:8080</div></div>
       <div class="bg-base-100 p-4 space-y-4">
         <div class="flex flex-wrap items-center gap-2" id="mock-controls">
           <span class="input input-sm w-24">key: z</span>
-          <span class="input input-sm w-24">value: 9</span>
+          <span class="input input-sm w-24">value: 7</span>
           <span class="btn btn-sm btn-primary">Write</span>
-          <span class="btn btn-sm btn-ghost">Auto-write: off</span>
           <span class="divider divider-horizontal mx-0"></span>
           <span class="btn btn-sm btn-outline">Isolate leader</span>
           <span class="btn btn-sm btn-outline btn-active">Leader + 1 | rest</span>
           <span class="btn btn-sm btn-outline btn-success">Heal</span>
+          <span class="text-xs font-mono opacity-75">z=7: ok at node3 (index 7, term 4)</span>
         </div>
-        <div role="alert" class="alert alert-warning alert-soft py-2 text-sm" id="mock-banner">
-          <span>Partition active: <strong>A</strong> = {node1, node2} · <strong>B</strong> = {node3, node4, node5}</span>
-        </div>
+        <p class="text-xs opacity-75" id="mock-hint">Nodes are killed and started from a terminal: <code>docker compose kill node3</code> / <code>docker compose start node3</code>.</p>
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3" id="mock-nodes">
-          <div class="card card-border bg-base-200 border-warning/60"><div class="card-body p-3 gap-2">
-            <div class="flex items-center justify-between gap-1"><span class="font-bold">node1</span><span class="badge badge-sm badge-warning">LEADER?</span></div>
-            <div class="text-xs opacity-80">term 3 · group A · up</div>
-            <div class="flex flex-wrap gap-1"><span class="entry c">1</span><span class="entry c">1</span><span class="entry c">2</span><span class="entry c">3</span><span class="entry c">3</span><span class="entry u">3</span><span class="entry u">3</span></div>
+          <div class="card card-border bg-base-200 border-primary"><div class="card-body p-3 gap-2">
+            <div class="flex items-center justify-between gap-1"><span class="font-bold">node1</span><span class="badge badge-sm badge-primary">LEADER</span></div>
+            <div class="text-xs opacity-80">term 3 · up · side A</div>
+            <div class="flex flex-wrap gap-1"><span class="entry c">1</span><span class="entry c">1</span><span class="entry c">2</span><span class="entry c">3</span><span class="entry c">3</span><span class="entry u">3</span></div>
             <div class="text-xs font-mono opacity-80">commit 5 · x=1 y=2</div>
-            <div class="flex gap-1"><span class="btn btn-xs btn-error btn-outline">Kill</span><span class="btn btn-xs btn-disabled">Start</span></div>
           </div></div>
           <div class="card card-border bg-base-200"><div class="card-body p-3 gap-2">
             <div class="flex items-center justify-between gap-1"><span class="font-bold">node2</span><span class="badge badge-sm badge-ghost">follower</span></div>
-            <div class="text-xs opacity-80">term 3 · group A · up</div>
+            <div class="text-xs opacity-80">term 3 · up · side A</div>
             <div class="flex flex-wrap gap-1"><span class="entry c">1</span><span class="entry c">1</span><span class="entry c">2</span><span class="entry c">3</span><span class="entry c">3</span><span class="entry u">3</span></div>
             <div class="text-xs font-mono opacity-80">commit 5 · x=1 y=2</div>
-            <div class="flex gap-1"><span class="btn btn-xs btn-error btn-outline">Kill</span><span class="btn btn-xs btn-disabled">Start</span></div>
           </div></div>
           <div class="card card-border bg-base-200 border-primary"><div class="card-body p-3 gap-2">
             <div class="flex items-center justify-between gap-1"><span class="font-bold">node3</span><span class="badge badge-sm badge-primary">LEADER</span></div>
-            <div class="text-xs opacity-80">term 4 · group B · up</div>
+            <div class="text-xs opacity-80">term 4 · up · side B</div>
             <div class="flex flex-wrap gap-1"><span class="entry c">1</span><span class="entry c">1</span><span class="entry c">2</span><span class="entry c">3</span><span class="entry c">3</span><span class="entry c">4</span><span class="entry c">4</span></div>
             <div class="text-xs font-mono opacity-80">commit 7 · x=1 y=2 z=7</div>
-            <div class="flex gap-1"><span class="btn btn-xs btn-error btn-outline">Kill</span><span class="btn btn-xs btn-disabled">Start</span></div>
           </div></div>
           <div class="card card-border bg-base-200"><div class="card-body p-3 gap-2">
             <div class="flex items-center justify-between gap-1"><span class="font-bold">node4</span><span class="badge badge-sm badge-ghost">follower</span></div>
-            <div class="text-xs opacity-80">term 4 · group B · up</div>
+            <div class="text-xs opacity-80">term 4 · up · side B</div>
             <div class="flex flex-wrap gap-1"><span class="entry c">1</span><span class="entry c">1</span><span class="entry c">2</span><span class="entry c">3</span><span class="entry c">3</span><span class="entry c">4</span><span class="entry c">4</span></div>
             <div class="text-xs font-mono opacity-80">commit 7 · x=1 y=2 z=7</div>
-            <div class="flex gap-1"><span class="btn btn-xs btn-error btn-outline">Kill</span><span class="btn btn-xs btn-disabled">Start</span></div>
           </div></div>
           <div class="card card-border bg-base-200"><div class="card-body p-3 gap-2">
             <div class="flex items-center justify-between gap-1"><span class="font-bold">node5</span><span class="badge badge-sm badge-ghost">follower</span></div>
-            <div class="text-xs opacity-80">term 4 · group B · up</div>
+            <div class="text-xs opacity-80">term 4 · up · side B</div>
             <div class="flex flex-wrap gap-1"><span class="entry c">1</span><span class="entry c">1</span><span class="entry c">2</span><span class="entry c">3</span><span class="entry c">3</span><span class="entry c">4</span><span class="entry c">4</span></div>
             <div class="text-xs font-mono opacity-80">commit 7 · x=1 y=2 z=7</div>
-            <div class="flex gap-1"><span class="btn btn-xs btn-error btn-outline">Kill</span><span class="btn btn-xs btn-disabled">Start</span></div>
           </div></div>
         </div>
         <div class="rounded-box bg-base-200 p-3 text-xs font-mono space-y-1 opacity-90" id="mock-events">
-          <div class="font-sans font-semibold text-sm opacity-100 pb-1">Events</div>
-          <div>12:04:40 &nbsp;write z=9 → node1 · not committed after 5 s (504)</div>
-          <div>12:04:33 &nbsp;node3 committed index 7</div>
-          <div>12:04:31 &nbsp;node3 became leader · term 4</div>
-          <div>12:04:28 &nbsp;node3 started an election · term 4</div>
-          <div>12:04:26 &nbsp;partition: A={node1,node2} B={node3,node4,node5}</div>
+          <div class="font-sans font-semibold text-sm opacity-100 pb-1">Events (newest first)</div>
+          <div>12:04:31 &nbsp;node3 &nbsp;became leader (term 4)</div>
+          <div>12:04:28 &nbsp;node3 &nbsp;started election (term 4)</div>
+          <div>12:02:14 &nbsp;node1 &nbsp;became leader (term 3)</div>
         </div>
       </div>
     </div>
-    <p class="text-sm opacity-75">node1 still thinks it's the leader of term 3, but it can't reach a majority, so its writes stay uncommitted. After <strong>Heal</strong>, it sees term 4, steps down, and its two uncommitted entries are replaced with node3's.</p>
+    <p class="text-sm opacity-75" data-lavish-revision="r4">Two cards say LEADER, and the term tells them apart. The first write (z=9) went to node1 before the other side elected a leader: its entry is still dashed and the write timed out. The second (z=7) went to node3, the leader with the higher term, and committed. After <strong>Heal</strong>, node1 sees term 4, steps down, and its uncommitted entry is replaced with node3's.</p>
   </section>
 
   <!-- 8 Scenarios -->
-  <section id="scenarios" class="space-y-4">
+  <section id="scenarios" class="space-y-4" data-lavish-revision="r4">
     <h2 class="text-2xl font-bold">8 · Demo scenarios</h2>
+    <p class="text-sm opacity-75 max-w-3xl">Kill and start nodes from a terminal. Writes and partitions are buttons on the dashboard.</p>
     <div class="grid md:grid-cols-2 gap-4">
       <div class="card bg-base-200 card-border" id="sc-1"><div class="card-body gap-2">
         <h3 class="card-title text-base">1 · The leader fails</h3>
         <ol class="list-decimal pl-5 text-sm space-y-1 opacity-90">
-          <li>Kill the leader.</li><li>After 3–6 s, a follower becomes a candidate and wins at term + 1.</li>
-          <li>A write succeeds on the new leader.</li><li>Start the old leader. It rejoins as a follower and its log catches up.</li>
+          <li>Kill the leader: <code>docker compose kill node3</code> (whichever node is leader).</li>
+          <li>A new leader appears in a few seconds, at a higher term.</li>
+          <li>Later, start the old one: <code>docker compose start node3</code>. It rejoins as a follower and catches up.</li>
         </ol>
         <p class="text-sm"><span class="badge badge-soft badge-primary badge-sm">point out</span> the term number goes up, and committed entries survived.</p>
       </div></div>
       <div class="card bg-base-200 card-border" id="sc-2"><div class="card-body gap-2">
         <h3 class="card-title text-base">2 · A follower fails and catches up</h3>
         <ol class="list-decimal pl-5 text-sm space-y-1 opacity-90">
-          <li>Kill node4.</li><li>Write 5 values. They commit with 4 of 5 nodes.</li>
-          <li>Start node4. Its log fills in and its KV store matches the others.</li>
+          <li>Kill a follower.</li><li>Write a few values. They commit with 4 of 5 nodes.</li>
+          <li>Start it. Its log fills in from the leader.</li>
         </ol>
-        <p class="text-sm"><span class="badge badge-soft badge-primary badge-sm">point out</span> node4 kept its term and log on disk, and the leader works backwards to find where their logs match.</p>
+        <p class="text-sm"><span class="badge badge-soft badge-primary badge-sm">point out</span> the node kept its term and log on disk, and the leader works backwards to find where their logs match.</p>
       </div></div>
       <div class="card bg-base-200 card-border border-primary/50" id="sc-3"><div class="card-body gap-2">
         <h3 class="card-title text-base">3 · Partition with the leader in the minority <span class="badge badge-sm badge-primary">strongest</span></h3>
         <ol class="list-decimal pl-5 text-sm space-y-1 opacity-90">
-          <li>Apply "leader + 1 | rest".</li><li>Write to the old leader. The entry stays dashed and the request returns 504.</li>
-          <li>The majority side elects a new leader, and writes there commit.</li>
-          <li>Heal. The old leader steps down and its uncommitted entries are replaced.</li>
+          <li>Click <strong>Leader + 1 | rest</strong> and write a value straight away.</li>
+          <li>That first write goes to the cut-off leader: its entry stays dashed and the write times out.</li>
+          <li>Wait a few seconds. The other side elects a leader at a higher term (two cards say LEADER, and the term tells them apart). Write again: the second write commits.</li>
+          <li>Click <strong>Heal</strong>. The old leader steps down and its entry is replaced.</li>
         </ol>
         <p class="text-sm"><span class="badge badge-soft badge-primary badge-sm">point out</span> there are never two leaders making progress at once, and only uncommitted entries are ever lost.</p>
       </div></div>
       <div class="card bg-base-200 card-border" id="sc-4"><div class="card-body gap-2">
         <h3 class="card-title text-base">4 · No majority</h3>
         <ol class="list-decimal pl-5 text-sm space-y-1 opacity-90">
-          <li>Kill 3 of the 5 nodes.</li><li>The 2 survivors keep running elections and the term keeps climbing, but there's no leader and writes fail.</li>
-          <li>Start one node. A leader is elected and writes work again.</li>
+          <li>Kill three nodes.</li><li>With two nodes left there is no leader and no writes. The term keeps climbing as they keep running elections.</li>
+          <li>Start one node. With three, a leader is elected and progress returns.</li>
         </ol>
         <p class="text-sm"><span class="badge badge-soft badge-primary badge-sm">point out</span> Raft gives up availability to stay consistent. The climbing term leads into a discussion of pre-vote.</p>
       </div></div>
@@ -915,35 +903,40 @@ self.send(reply)            # inside the node</code></pre>
 
   <!-- 9 Tests -->
   <section id="tests" class="space-y-5" data-lavish-revision="r3">
-    <h2 class="text-2xl font-bold">9 · Test plan <span class="text-sm font-normal opacity-60">(built; T12–T15 are in review)</span></h2>
-    <p class="opacity-85 max-w-3xl">The tests are the evidence of correctness. The demo only illustrates. Every test runs in-process (on the simulator, on a single node, or on one small component), so none of them need Docker or a real clock.
-    <strong>1,243 tests pass in about 13 seconds</strong> (<code>uv run pytest</code>).</p>
+    <h2 class="text-2xl font-bold">9 · Tests</h2>
+    <p class="opacity-85 max-w-3xl">The tests are the evidence of correctness. The demo only illustrates. Every test runs in-process (on the simulator, on a single node, or on one small component), so none of them need Docker.
+    <strong>1,117 tests pass in about 13 seconds</strong> (<code>uv run pytest</code>).</p>
+    <p class="opacity-85 max-w-3xl" data-lavish-revision="r4">Tests of "something good eventually happens" (a leader is elected, a follower catches up) need a time limit in ticks, or a broken implementation would hang the test. Those constants are called <strong>deadlines</strong> (<code>*_DEADLINE</code>). Each is about twice the slowest case measured, so changing the timeouts means measuring again.
+    After the scope cut (§14) the suite was trimmed from 3,403 to 2,176 lines and from 1,249 to 1,117 tests: case matrices, variants of the same behavior, single-node tests the cluster tests already cover, and tests of helpers went. Every named rule test, the scenario tests, the safety checks and the fuzz test stayed.</p>
 
     <h3 class="text-lg font-semibold">Test files</h3>
-    <div class="overflow-x-auto rounded-box border border-base-content/10 bg-base-200">
+    <div class="overflow-x-auto rounded-box border border-base-content/10 bg-base-200" data-lavish-revision="r4">
       <table class="table table-sm">
         <thead><tr><th>File</th><th class="text-right">Tests</th><th>What it checks</th></tr></thead>
         <tbody>
           <tr class="bg-base-300/40"><td colspan="3" class="text-xs uppercase tracking-wide opacity-70">Foundations</td></tr>
-          <tr><td class="whitespace-nowrap" style="overflow-wrap:normal"><code>test_messages.py</code></td><td class="text-right">28</td><td>The JSON wire format, pinned by a hand-written table so that a mistake in both directions can't hide · round trips · an unknown type or a missing field is rejected · messages are immutable</td></tr>
-          <tr><td class="whitespace-nowrap" style="overflow-wrap:normal"><code>test_storage.py</code></td><td class="text-right">20</td><td><code>MemoryStorage</code>: <code>term_at(0) == 0</code> · append · <code>entries_from</code> · <code>truncate_from</code> (middle, end, past the end) · out-of-range indexes raise</td></tr>
-          <tr><td class="whitespace-nowrap" style="overflow-wrap:normal"><code>test_kv.py</code></td><td class="text-right">9</td><td>set, overwrite, delete, noop · an unknown op raises and changes nothing</td></tr>
-          <tr><td class="whitespace-nowrap" style="overflow-wrap:normal"><code>test_network.py</code></td><td class="text-right">21</td><td><code>SimNetwork</code>: delivery after the delay · reordering · drop and duplicate rates · partition and heal, checked at delivery time · same seed, same deliveries</td></tr>
+          <tr><td class="whitespace-nowrap" style="overflow-wrap:normal"><code>test_messages.py</code></td><td class="text-right">12</td><td>The JSON wire format, pinned by hand-written JSON in each direction so that a mistake in both can't hide · an unknown or missing type is rejected</td></tr>
+          <tr><td class="whitespace-nowrap" style="overflow-wrap:normal"><code>test_storage.py</code></td><td class="text-right">5</td><td><code>MemoryStorage</code>: starts empty · append · <code>entries_from</code> · <code>truncate_from</code>, then append reuses the indexes · out-of-range indexes raise</td></tr>
+          <tr><td class="whitespace-nowrap" style="overflow-wrap:normal"><code>test_kv.py</code></td><td class="text-right">4</td><td>set and overwrite · delete · noop · an unknown op raises and changes nothing</td></tr>
+          <tr><td class="whitespace-nowrap" style="overflow-wrap:normal"><code>test_network.py</code></td><td class="text-right">7</td><td><code>SimNetwork</code>: one delivery after a delay · reordering · drops · a duplicate gets its own delay · partition, checked at delivery time · heal</td></tr>
           <tr><td class="whitespace-nowrap" style="overflow-wrap:normal"><code>test_smoke.py</code></td><td class="text-right">2</td><td>Python is 3.12 or newer · all four packages import</td></tr>
           <tr class="bg-base-300/40"><td colspan="3" class="text-xs uppercase tracking-wide opacity-70">One node at a time (no cluster): inputs go in, <code>take_*()</code> outputs are checked</td></tr>
-          <tr><td class="whitespace-nowrap" style="overflow-wrap:normal"><code>test_node_election.py</code></td><td class="text-right">58</td><td>The election timer and its resets (R4) · starting an election with the vote saved first (R1) · stepping down on a higher term (R2) · vote rules (R3) · counting votes · heartbeats · a leader never times out</td></tr>
-          <tr><td class="whitespace-nowrap" style="overflow-wrap:normal"><code>test_node_replication.py</code></td><td class="text-right">43</td><td>The consistency check · truncation only on a real conflict, and a reordered AppendEntries doesn't truncate (R5) · backtracking · stale replies · the commit rule (R6) · the noop on election (R7) · followers following <code>leader_commit</code> · the batch cap</td></tr>
+          <tr><td class="whitespace-nowrap" style="overflow-wrap:normal"><code>test_node_election.py</code></td><td class="text-right">15</td><td>The election timer and its resets (R4) · starting an election · stepping down on a higher term (R2) · one vote per term, saved (R1, R3) · the up-to-date log rule (R3) · counting votes · heartbeats keep a follower from standing</td></tr>
+          <tr><td class="whitespace-nowrap" style="overflow-wrap:normal"><code>test_node_replication.py</code></td><td class="text-right">14</td><td><code>propose</code> · the consistency check · truncation only on a real conflict, and a reordered AppendEntries doesn't truncate (R5) · backtracking · the commit rule (R6) · the noop on election (R7) · followers following <code>leader_commit</code> · the batch cap · <code>take_committed</code> hands out each entry once</td></tr>
           <tr class="bg-base-300/40"><td colspan="3" class="text-xs uppercase tracking-wide opacity-70">Whole clusters on the simulator (each cluster is a <code>checked_cluster</code>)</td></tr>
-          <tr><td class="whitespace-nowrap" style="overflow-wrap:normal"><code>test_election.py</code></td><td class="text-right">9</td><td>Exactly one leader, and everyone follows it · re-election after the leader crashes · split votes resolve · a candidate with an outdated log can't win (R3) · followers keep a healthy leader under load, with writes and a duplicating network (R4)</td></tr>
-          <tr><td class="whitespace-nowrap" style="overflow-wrap:normal"><code>test_replication.py</code></td><td class="text-right">7</td><td>A write applies on every node · in order · a lagging follower catches up after a restart · conflicting uncommitted entries get overwritten · a write whose entry was overwritten returns False · all KV stores converge</td></tr>
+          <tr><td class="whitespace-nowrap" style="overflow-wrap:normal"><code>test_election.py</code></td><td class="text-right">6</td><td>Exactly one leader, and everyone follows it · split votes resolve · re-election after the leader crashes · a candidate with an outdated log can't win (R3) · followers keep a healthy leader under load, with writes and a duplicating network (R4) · the same seed gives the same run</td></tr>
+          <tr><td class="whitespace-nowrap" style="overflow-wrap:normal"><code>test_replication.py</code></td><td class="text-right">5</td><td>A write applies on every node · in order · a lagging follower catches up after a restart · a write whose entry was overwritten returns False · all KV stores converge</td></tr>
           <tr><td class="whitespace-nowrap" style="overflow-wrap:normal"><code>test_failures.py</code></td><td class="text-right">34</td><td>A restarted node doesn't vote twice (R1, 10 seeds) · a leader in the minority can't commit · after healing it steps down and its entries are overwritten (R2) · no majority means no leader and no commits · restarting one node restores progress · the Figure 8 scenario scripted stage by stage (R6, 10 seeds) · and its branch (e), where a current-term entry commits the old one (10 seeds)</td></tr>
           <tr class="bg-base-300/40"><td colspan="3" class="text-xs uppercase tracking-wide opacity-70">The checks and the fuzz test</td></tr>
-          <tr><td class="whitespace-nowrap" style="overflow-wrap:normal"><code>test_safety_checks.py</code></td><td class="text-right">11</td><td>The checker itself: each safety property gets a hand-built bad state and must fire with the exact message · a stale leader isn't wrongly flagged · a node that deletes a committed entry is reported, not a crash</td></tr>
+          <tr><td class="whitespace-nowrap" style="overflow-wrap:normal"><code>test_safety_checks.py</code></td><td class="text-right">6</td><td>The checker itself: each safety property gets a hand-built bad state and must fire, naming the property, tick, nodes and index · the checker follows a real run</td></tr>
           <tr><td class="whitespace-nowrap" style="overflow-wrap:normal"><code>test_fuzz.py</code></td><td class="text-right">1,001</td><td>1,000 random fault schedules, one test per seed (details below), plus <code>test_schedules_are_not_trivial</code>, which checks that the fuzzer really injects faults</td></tr>
+          <tr class="bg-base-300/40"><td colspan="3" class="text-xs uppercase tracking-wide opacity-70">The demo server (in process, no Docker)</td></tr>
+          <tr><td class="whitespace-nowrap" style="overflow-wrap:normal"><code>test_file_storage.py</code></td><td class="text-right">2</td><td>Reopening the same path restores term, vote and log · a leftover <code>.tmp</code> file is ignored</td></tr>
+          <tr><td class="whitespace-nowrap" style="overflow-wrap:normal"><code>test_node_server.py</code></td><td class="text-right">4</td><td>A one-node server accepts a write and shows it in <code>/state</code> · a non-leader answers 421 · a message from a blocked sender is dropped · a restart with the same data directory keeps its term and log</td></tr>
         </tbody>
       </table>
     </div>
-    <p class="text-sm opacity-75">The checker itself lives in <code>tests/safety_checks.py</code> and isn't a test file. The counts above add up to the 1,243 total.</p>
+    <p class="text-sm opacity-75">The checker itself lives in <code>tests/safety_checks.py</code> and isn't a test file. The counts above add up to the 1,117 total.</p>
 
     <h3 class="text-lg font-semibold pt-2">The five safety properties <span class="text-sm font-normal opacity-60">(<code>tests/safety_checks.py</code>, checked after every simulator step)</span></h3>
     <p class="opacity-85 max-w-3xl">The first four are Raft's own safety properties, with the names the paper gives them in its Figure 3. The fifth is ours. A <code>SafetyChecker</code> checks all five after every step of every cluster test, and breaking one raises a <code>SafetyViolation</code> that names the property, the tick, the nodes and the index or term involved.</p>
@@ -1020,7 +1013,7 @@ from term 2 = {'op': 'noop'} at tick 49</code></pre>
           <li><strong>Strikes:</strong> none, half or all new leaders are crashed or cut off 1–15 ticks after they win.</li>
           <li><strong>Client writes</strong> through <code>SimCluster.write</code>, each to a new key. Faults keep happening while a write waits, so writes get lost, overwritten and recovered in every way the faults allow.</li>
         </ul>
-        <p class="text-sm opacity-80">Settling gets 1,200 ticks: about twice the worst case (604 ticks) over seeds 0–9,999.</p>
+        <p class="text-sm opacity-80">Settling gets 1,200 ticks (<code>SETTLE_DEADLINE</code>): about twice the worst case (604 ticks) over seeds 0–9,999.</p>
       </div></div>
       <div class="card bg-base-200 card-border border-primary/50" id="why-strikes"><div class="card-body gap-2">
         <h4 class="font-semibold">Why strikes and reboots were added</h4>
@@ -1063,16 +1056,17 @@ from term 2 = {'op': 'noop'} at tick 49</code></pre>
           <tr><td>Figure 8 tests with R6 removed</td><td><code>test_figure8</code> and <code>test_figure8_current_term_entry_commits_the_old_one</code> <strong>fail on every seed</strong> (10 of 10), at stage (c). Example: <code>tick 49: n1 counts entry 2, from term 2, as committed (R6)</code>. Without the batch cap, stage (c) never happens.</td></tr>
           <tr><td>Each safety property fires on a real bug</td><td>A majority of 2 gives Election Safety (<code>n5 and n1 both led term 1</code>). A follower that skips the consistency check gives Log Matching. Voting without R3's log check gives Leader Completeness. <code>take_committed</code> skipping the newest entry gives No lost acknowledged writes. State Machine Safety fires under the R5 bug (3,346 seeds above) and, with R6 removed and Leader Completeness switched off, on n1 compared with itself before its restart.</td></tr>
           <tr><td>The real code</td><td><strong>Seeds 0–9,999 all pass.</strong> Through pytest, <code>FUZZ_SEEDS=5000</code> takes 56 s.</td></tr>
-          <tr><td>Gaps the fuzzer found in the checker itself</td><td>Under the R5 bug, a node that deleted an entry in the step it was applied crashed the checker with an <code>IndexError</code>, and a node that deleted a committed entry later went unnoticed. Both are now State Machine Safety violations, each with a unit test.</td></tr>
-          <tr><td>Bugs injected per task</td><td>Per task, deliberate bugs went into scratch copies of the node code, for example 19 for replication and 15 for commit. Every one failed at least one test.</td></tr>
+          <tr><td>Gaps the fuzzer found in the checker itself</td><td>Under the R5 bug, a node that deleted an entry in the step it was applied crashed the checker with an <code>IndexError</code>, and a node that deleted a committed entry later went unnoticed. Both are now State Machine Safety violations.</td></tr>
+          <tr><td>Bugs injected per task</td><td>Before the trim, deliberate bugs went into scratch copies of the node code for each task, for example 19 for replication and 15 for commit. Every one failed at least one test.</td></tr>
+          <tr data-lavish-revision="r4"><td>After the trim</td><td>Eight deliberate bugs, put in one at a time, were all still caught. The R6 one was re-run independently: 20 Figure 8 cases, 7 fuzz seeds and 2 unit tests fail.</td></tr>
         </tbody>
       </table>
     </div>
   </section>
 
   <!-- 10 Layout -->
-  <section id="layout" class="space-y-4" data-lavish-revision="r3">
-    <h2 class="text-2xl font-bold">10 · Repository layout <span class="text-sm font-normal opacity-60">(as committed today)</span></h2>
+  <section id="layout" class="space-y-4" data-lavish-revision="r4">
+    <h2 class="text-2xl font-bold">10 · Repository layout <span class="text-sm font-normal opacity-60">(as committed)</span></h2>
 <pre class="bg-base-200 rounded-box p-4 overflow-x-auto text-sm leading-relaxed"><code>.
 ├── raft/                     # algorithm core, no I/O: own this line by line
 │   ├── messages.py           # message dataclasses + JSON encode/decode
@@ -1082,54 +1076,51 @@ from term 2 = {'op': 'noop'} at tick 49</code></pre>
 ├── sim/                      # deterministic driver (tests)
 │   ├── network.py            # SimNetwork
 │   └── cluster.py            # SimCluster
-├── server/                   # real driver (demo): EMPTY package so far
-│   └── __init__.py           #   T17–T19 add file_storage.py and node_server.py
-├── dashboard/                # EMPTY package so far
-│   └── __init__.py           #   T21–T22 add app.py and static/index.html
+├── server/                   # real driver (demo)
+│   ├── file_storage.py       # FileStorage: one fsynced JSON file per node
+│   └── node_server.py        # the node as an aiohttp server
+├── dashboard/                # the demo page and the small API behind it
+│   ├── app.py                # /api/cluster, /api/write, /api/partition, /api/heal
+│   └── static/index.html     # plain HTML/CSS/JS
 ├── tests/
 │   ├── safety_checks.py      # SafetyChecker: the five safety properties
 │   ├── test_messages.py  test_storage.py  test_kv.py  test_network.py  test_smoke.py
 │   ├── test_node_election.py  test_node_replication.py   # one node at a time
 │   ├── test_election.py  test_replication.py  test_failures.py   # whole clusters
-│   └── test_safety_checks.py  test_fuzz.py
+│   ├── test_safety_checks.py  test_fuzz.py
+│   └── test_file_storage.py  test_node_server.py   # the demo server
 ├── notes/                    # raft-primer.md, consensus-alternatives.md
 ├── .claude/skills/           # lavish/ and next-task/: the review and task workflow
 ├── .lavish/design.html       # this page
+├── Dockerfile  docker-compose.yml  .dockerignore   # one image, six containers
 ├── DESIGN.md                 # canonical spec
 ├── PLAN.md                   # task list, gates, statuses
 ├── AI_NOTES.md               # running log: delegated / verified / AI mistakes caught
 ├── ASSIGNMENT.md  CLAUDE.md
-├── README.md                 # a stub for now (T23 writes the real one)
-├── pyproject.toml  uv.lock  .python-version  skills-lock.json  .gitignore
-└── (not created yet)  Dockerfile  docker-compose.yml  .dockerignore   # T20</code></pre>
-    <p class="text-sm opacity-75 max-w-3xl">Tests for the server and dashboard (<code>test_file_storage.py</code>, <code>test_node_server.py</code>, <code>test_dashboard.py</code>) are planned in T17, T18/T19 and T21.</p>
+├── README.md                 # design, evidence, demo, limitations, AI usage
+└── pyproject.toml  uv.lock  .python-version  skills-lock.json  .gitignore</code></pre>
   </section>
 
   <!-- 11 Plan -->
-  <section id="plan" class="space-y-4" data-lavish-revision="r3">
+  <section id="plan" class="space-y-4" data-lavish-revision="r4">
     <h2 class="text-2xl font-bold">11 · Plan and progress <span class="text-sm font-normal opacity-60">(from PLAN.md · one commit per task)</span></h2>
-    <p class="opacity-85 max-w-3xl">24 tasks and 6 review gates. A task moves from <em>to do</em> to <em>in review</em> when it is committed with its tests, and to <em>done</em> when you approve it. Only you mark tasks done and gates approved.</p>
+    <p class="opacity-85 max-w-3xl">24 tasks and 6 review gates. A task moves from <em>to do</em> to <em>in review</em> when it is committed with its tests, and to <em>done</em> when you approve it. <em>Cut</em> means dropped for simplicity. Only you mark tasks done and gates approved.</p>
     <figure class="card bg-base-200 card-border p-4">
       <svg class="fig" viewBox="0 0 900 190" role="img" aria-labelledby="p-title">
-        <title id="p-title">Progress: 11 tasks done, 5 in review, 8 to do. Gates 1 to 3 are approved and Gate 4 is waiting for review.</title>
-        <g id="p-T01"><title>T01: done</title><rect class="st-done" x="20" y="48" width="32" height="36" rx="6"/><text class="lbl" x="36.0" y="71" text-anchor="middle">T01</text></g><g id="p-T02"><title>T02: done</title><rect class="st-done" x="56" y="48" width="32" height="36" rx="6"/><text class="lbl" x="72.0" y="71" text-anchor="middle">T02</text></g><g id="p-T03"><title>T03: done</title><rect class="st-done" x="92" y="48" width="32" height="36" rx="6"/><text class="lbl" x="108.0" y="71" text-anchor="middle">T03</text></g><g id="p-T04"><title>T04: done</title><rect class="st-done" x="128" y="48" width="32" height="36" rx="6"/><text class="lbl" x="144.0" y="71" text-anchor="middle">T04</text></g><g id="p-T05"><title>T05: done</title><rect class="st-done" x="164" y="48" width="32" height="36" rx="6"/><text class="lbl" x="180.0" y="71" text-anchor="middle">T05</text></g><g id="p-T06"><title>T06: done</title><rect class="st-done" x="200" y="48" width="32" height="36" rx="6"/><text class="lbl" x="216.0" y="71" text-anchor="middle">T06</text></g><g id="p-T07"><title>T07: done</title><rect class="st-done" x="236" y="48" width="32" height="36" rx="6"/><text class="lbl" x="252.0" y="71" text-anchor="middle">T07</text></g><g id="p-T08"><title>T08: done</title><rect class="st-done" x="272" y="48" width="32" height="36" rx="6"/><text class="lbl" x="288.0" y="71" text-anchor="middle">T08</text></g><g id="p-T09"><title>T09: done</title><rect class="st-done" x="308" y="48" width="32" height="36" rx="6"/><text class="lbl" x="324.0" y="71" text-anchor="middle">T09</text></g><g id="p-T10"><title>T10: done</title><rect class="st-done" x="344" y="48" width="32" height="36" rx="6"/><text class="lbl" x="360.0" y="71" text-anchor="middle">T10</text></g><g id="p-T11"><title>T11: done</title><rect class="st-done" x="380" y="48" width="32" height="36" rx="6"/><text class="lbl" x="396.0" y="71" text-anchor="middle">T11</text></g><g id="p-T12"><title>T12: in review</title><rect class="st-review" x="416" y="48" width="32" height="36" rx="6"/><text class="lbl" x="432.0" y="71" text-anchor="middle">T12</text></g><g id="p-T13a"><title>T13a: in review</title><rect class="st-review" x="452" y="48" width="32" height="36" rx="6"/><text class="lbl" x="468.0" y="71" text-anchor="middle">T13a</text></g><g id="p-T13"><title>T13: in review</title><rect class="st-review" x="488" y="48" width="32" height="36" rx="6"/><text class="lbl" x="504.0" y="71" text-anchor="middle">T13</text></g><g id="p-T14"><title>T14: in review</title><rect class="st-review" x="524" y="48" width="32" height="36" rx="6"/><text class="lbl" x="540.0" y="71" text-anchor="middle">T14</text></g><g id="p-T15"><title>T15: in review</title><rect class="st-review" x="560" y="48" width="32" height="36" rx="6"/><text class="lbl" x="576.0" y="71" text-anchor="middle">T15</text></g><g id="p-T16"><title>T16: to do</title><rect class="st-todo" x="596" y="48" width="32" height="36" rx="6"/><text class="lbl" x="612.0" y="71" text-anchor="middle">T16</text></g><g id="p-T17"><title>T17: to do</title><rect class="st-todo" x="632" y="48" width="32" height="36" rx="6"/><text class="lbl" x="648.0" y="71" text-anchor="middle">T17</text></g><g id="p-T18"><title>T18: to do</title><rect class="st-todo" x="668" y="48" width="32" height="36" rx="6"/><text class="lbl" x="684.0" y="71" text-anchor="middle">T18</text></g><g id="p-T19"><title>T19: to do</title><rect class="st-todo" x="704" y="48" width="32" height="36" rx="6"/><text class="lbl" x="720.0" y="71" text-anchor="middle">T19</text></g><g id="p-T20"><title>T20: to do</title><rect class="st-todo" x="740" y="48" width="32" height="36" rx="6"/><text class="lbl" x="756.0" y="71" text-anchor="middle">T20</text></g><g id="p-T21"><title>T21: to do</title><rect class="st-todo" x="776" y="48" width="32" height="36" rx="6"/><text class="lbl" x="792.0" y="71" text-anchor="middle">T21</text></g><g id="p-T22"><title>T22: to do</title><rect class="st-todo" x="812" y="48" width="32" height="36" rx="6"/><text class="lbl" x="828.0" y="71" text-anchor="middle">T22</text></g><g id="p-T23"><title>T23: to do</title><rect class="st-todo" x="848" y="48" width="32" height="36" rx="6"/><text class="lbl" x="864.0" y="71" text-anchor="middle">T23</text></g>
-        <g id="p-G1"><title>G1: approved</title><line class="life" x1="198" y1="34" x2="198" y2="90"/><text class="lbl" x="198" y="26" text-anchor="middle">G1</text></g><g id="p-G2"><title>G2: approved</title><line class="life" x1="306" y1="34" x2="306" y2="90"/><text class="lbl" x="306" y="26" text-anchor="middle">G2</text></g><g id="p-G3"><title>G3: approved</title><line class="life" x1="414" y1="34" x2="414" y2="90"/><text class="lbl" x="414" y="26" text-anchor="middle">G3</text></g><g id="p-G4"><title>Gate 4: waiting for your review</title><line class="edge-warn" style="stroke-width:3" x1="594" y1="34" x2="594" y2="132"/><text class="t-warn" x="594" y="26" text-anchor="middle">G4</text></g><g id="p-G5"><title>G5: not reached yet</title><line class="life" x1="774" y1="34" x2="774" y2="90"/><text class="lbl" x="774" y="26" text-anchor="middle">G5</text></g><g id="p-G6"><title>G6: not reached yet</title><line class="life" x1="882" y1="34" x2="882" y2="90"/><text class="lbl" x="882" y="26" text-anchor="middle">G6</text></g>
-        <g id="p-brackets"><title>Counts by status</title>
-          <path class="edge" d="M20,96 L20,102 L412,102 L412,96"/>
-          <text class="ts" x="216.0" y="122" text-anchor="middle">done · 11 tasks</text>
-          <path class="edge" style="stroke:var(--color-warning);opacity:1" d="M416,96 L416,102 L592,102 L592,96"/>
-          <text class="ts" x="504.0" y="122" text-anchor="middle">in review · 5</text>
-          <path class="edge" d="M596,96 L596,102 L880,102 L880,96"/>
-          <text class="ts" x="738.0" y="122" text-anchor="middle">to do · 8 tasks</text></g>
-        <g id="p-callout"><title>Everything is waiting at Gate 4</title>
-          <text class="t-warn" x="594" y="156" text-anchor="middle">Gate 4: waiting for your review</text>
-          <text class="lbl-warn" x="594" y="176" text-anchor="middle">nothing past it starts until you approve it</text></g>
+        <title id="p-title">Progress: 19 tasks done, 2 in review, 3 cut. Gates 1 to 5 are approved and Gate 6 is waiting for review.</title>
+        <g id="p-T01"><title>T01: done</title><rect class="st-done" x="20" y="48" width="32" height="36" rx="6"/><text class="lbl" x="36.0" y="71" text-anchor="middle">T01</text></g><g id="p-T02"><title>T02: done</title><rect class="st-done" x="56" y="48" width="32" height="36" rx="6"/><text class="lbl" x="72.0" y="71" text-anchor="middle">T02</text></g><g id="p-T03"><title>T03: done</title><rect class="st-done" x="92" y="48" width="32" height="36" rx="6"/><text class="lbl" x="108.0" y="71" text-anchor="middle">T03</text></g><g id="p-T04"><title>T04: done</title><rect class="st-done" x="128" y="48" width="32" height="36" rx="6"/><text class="lbl" x="144.0" y="71" text-anchor="middle">T04</text></g><g id="p-T05"><title>T05: done</title><rect class="st-done" x="164" y="48" width="32" height="36" rx="6"/><text class="lbl" x="180.0" y="71" text-anchor="middle">T05</text></g><g id="p-T06"><title>T06: done</title><rect class="st-done" x="200" y="48" width="32" height="36" rx="6"/><text class="lbl" x="216.0" y="71" text-anchor="middle">T06</text></g><g id="p-T07"><title>T07: done</title><rect class="st-done" x="236" y="48" width="32" height="36" rx="6"/><text class="lbl" x="252.0" y="71" text-anchor="middle">T07</text></g><g id="p-T08"><title>T08: done</title><rect class="st-done" x="272" y="48" width="32" height="36" rx="6"/><text class="lbl" x="288.0" y="71" text-anchor="middle">T08</text></g><g id="p-T09"><title>T09: done</title><rect class="st-done" x="308" y="48" width="32" height="36" rx="6"/><text class="lbl" x="324.0" y="71" text-anchor="middle">T09</text></g><g id="p-T10"><title>T10: done</title><rect class="st-done" x="344" y="48" width="32" height="36" rx="6"/><text class="lbl" x="360.0" y="71" text-anchor="middle">T10</text></g><g id="p-T11"><title>T11: done</title><rect class="st-done" x="380" y="48" width="32" height="36" rx="6"/><text class="lbl" x="396.0" y="71" text-anchor="middle">T11</text></g><g id="p-T12"><title>T12: done</title><rect class="st-done" x="416" y="48" width="32" height="36" rx="6"/><text class="lbl" x="432.0" y="71" text-anchor="middle">T12</text></g><g id="p-T13a"><title>T13a: done</title><rect class="st-done" x="452" y="48" width="32" height="36" rx="6"/><text class="lbl" x="468.0" y="71" text-anchor="middle">T13a</text></g><g id="p-T13"><title>T13: done</title><rect class="st-done" x="488" y="48" width="32" height="36" rx="6"/><text class="lbl" x="504.0" y="71" text-anchor="middle">T13</text></g><g id="p-T14"><title>T14: done</title><rect class="st-done" x="524" y="48" width="32" height="36" rx="6"/><text class="lbl" x="540.0" y="71" text-anchor="middle">T14</text></g><g id="p-T15"><title>T15: done</title><rect class="st-done" x="560" y="48" width="32" height="36" rx="6"/><text class="lbl" x="576.0" y="71" text-anchor="middle">T15</text></g><g id="p-T16"><title>T16: cut</title><rect class="st-cut" x="596" y="48" width="32" height="36" rx="6"/><text class="lbl-cut" x="612.0" y="71" text-anchor="middle">T16</text></g><g id="p-T17"><title>T17: done</title><rect class="st-done" x="632" y="48" width="32" height="36" rx="6"/><text class="lbl" x="648.0" y="71" text-anchor="middle">T17</text></g><g id="p-T18"><title>T18: done</title><rect class="st-done" x="668" y="48" width="32" height="36" rx="6"/><text class="lbl" x="684.0" y="71" text-anchor="middle">T18</text></g><g id="p-T19"><title>T19: cut</title><rect class="st-cut" x="704" y="48" width="32" height="36" rx="6"/><text class="lbl-cut" x="720.0" y="71" text-anchor="middle">T19</text></g><g id="p-T20"><title>T20: done</title><rect class="st-done" x="740" y="48" width="32" height="36" rx="6"/><text class="lbl" x="756.0" y="71" text-anchor="middle">T20</text></g><g id="p-T21"><title>T21: in review</title><rect class="st-review" x="776" y="48" width="32" height="36" rx="6"/><text class="lbl" x="792.0" y="71" text-anchor="middle">T21</text></g><g id="p-T22"><title>T22: cut</title><rect class="st-cut" x="812" y="48" width="32" height="36" rx="6"/><text class="lbl-cut" x="828.0" y="71" text-anchor="middle">T22</text></g><g id="p-T23"><title>T23: in review</title><rect class="st-review" x="848" y="48" width="32" height="36" rx="6"/><text class="lbl" x="864.0" y="71" text-anchor="middle">T23</text></g>
+        <g id="p-G1"><title>G1: approved</title><line class="life" x1="198" y1="34" x2="198" y2="90"/><text class="lbl" x="198" y="26" text-anchor="middle">G1</text></g><g id="p-G2"><title>G2: approved</title><line class="life" x1="306" y1="34" x2="306" y2="90"/><text class="lbl" x="306" y="26" text-anchor="middle">G2</text></g><g id="p-G3"><title>G3: approved</title><line class="life" x1="414" y1="34" x2="414" y2="90"/><text class="lbl" x="414" y="26" text-anchor="middle">G3</text></g><g id="p-G4"><title>G4: approved</title><line class="life" x1="594" y1="34" x2="594" y2="90"/><text class="lbl" x="594" y="26" text-anchor="middle">G4</text></g><g id="p-G5"><title>G5: approved</title><line class="life" x1="774" y1="34" x2="774" y2="90"/><text class="lbl" x="774" y="26" text-anchor="middle">G5</text></g><g id="p-G6"><title>Gate 6: waiting for your review</title><line class="edge-warn" style="stroke-width:3" x1="882" y1="34" x2="882" y2="132"/><text class="t-warn" x="882" y="26" text-anchor="middle">G6</text></g>
+        <g id="p-counts"><title>Counts by status</title>
+          <text class="ts" x="20" y="122">19 done · 2 in review · 3 cut</text></g>
+        <g id="p-callout"><title>Everything is waiting at Gate 6</title>
+          <text class="t-warn" x="882" y="156" text-anchor="end">Gate 6: waiting for your review</text>
+          <text class="lbl-warn" x="882" y="176" text-anchor="end">the last gate</text></g>
       </svg>
     </figure>
     <div class="flex flex-wrap gap-x-5 gap-y-2 text-sm items-center">
       <span class="badge badge-success badge-soft badge-sm whitespace-nowrap">✓ done</span> <span class="opacity-80">approved by you</span>
       <span class="badge badge-warning badge-sm whitespace-nowrap">● in review</span> <span class="opacity-80">committed, waiting for you</span>
-      <span class="badge badge-ghost badge-outline badge-sm whitespace-nowrap">○ to do</span> <span class="opacity-80">not started</span>
+      <span class="badge badge-ghost badge-outline badge-sm whitespace-nowrap">✕ cut</span> <span class="opacity-80">dropped for simplicity</span>
     </div>
     <div class="overflow-x-auto rounded-box border border-base-content/10 bg-base-200">
       <table class="table table-sm">
@@ -1149,28 +1140,27 @@ from term 2 = {'op': 'noop'} at tick 49</code></pre>
           <tr class=""><td class="whitespace-nowrap font-mono" style="overflow-wrap:normal">T10</td><td>Commit: majority rule (R6), <code>leader_commit</code>, <code>take_committed</code>, noop on election (R7)</td><td><span class="badge badge-success badge-soft badge-sm whitespace-nowrap">✓ done</span></td></tr>
           <tr class=""><td class="whitespace-nowrap font-mono" style="overflow-wrap:normal">T11</td><td><code>SimCluster.write</code> + KV apply + <code>tests/test_replication.py</code></td><td><span class="badge badge-success badge-soft badge-sm whitespace-nowrap">✓ done</span></td></tr>
           <tr class="bg-base-300/50"><td class="whitespace-nowrap font-mono" style="overflow-wrap:normal">G3</td><td><strong>Gate 3 · replication reviewed (T09–T11)</strong></td><td><span class="badge badge-success badge-sm whitespace-nowrap">approved</span></td></tr>
-          <tr class=""><td class="whitespace-nowrap font-mono" style="overflow-wrap:normal">T12</td><td><code>tests/test_failures.py</code>: restart (R1), minority leader, heal (R2), no majority</td><td><span class="badge badge-warning badge-sm whitespace-nowrap">● in review</span></td></tr>
-          <tr class=""><td class="whitespace-nowrap font-mono" style="overflow-wrap:normal">T13a</td><td><code>RaftConfig.max_entries_per_append</code>: optional cap on entries per AppendEntries</td><td><span class="badge badge-warning badge-sm whitespace-nowrap">● in review</span></td></tr>
-          <tr class=""><td class="whitespace-nowrap font-mono" style="overflow-wrap:normal">T13</td><td><code>test_figure8</code>: the scripted Figure 8 scenario (R6), using a small batch cap</td><td><span class="badge badge-warning badge-sm whitespace-nowrap">● in review</span></td></tr>
-          <tr class=""><td class="whitespace-nowrap font-mono" style="overflow-wrap:normal">T14</td><td><code>tests/safety_checks.py</code>: the 5 safety properties, run after every simulator step</td><td><span class="badge badge-warning badge-sm whitespace-nowrap">● in review</span></td></tr>
-          <tr class=""><td class="whitespace-nowrap font-mono" style="overflow-wrap:normal">T15</td><td><code>tests/test_fuzz.py</code>: randomized fault schedules over many seeds</td><td><span class="badge badge-warning badge-sm whitespace-nowrap">● in review</span></td></tr>
-          <tr class="bg-warning/15" id="gate-4"><td class="whitespace-nowrap font-mono border-l-4 border-warning" style="overflow-wrap:normal">G4</td><td><strong>Gate 4 · correctness evidence complete (T12–T15)</strong><br><span class="text-xs opacity-80">T12–T15 are committed and passing. Everything below waits for this review.</span></td><td><span class="badge badge-warning badge-sm whitespace-nowrap">waiting for your review</span></td></tr>
-          <tr class="opacity-75"><td class="whitespace-nowrap font-mono" style="overflow-wrap:normal">T16</td><td>KV duplicate detection by <code>(client_id, seq)</code></td><td><span class="badge badge-ghost badge-outline badge-sm whitespace-nowrap">○ to do</span></td></tr>
-          <tr class="opacity-75"><td class="whitespace-nowrap font-mono" style="overflow-wrap:normal">T17</td><td><code>server/file_storage.py</code>: <code>FileStorage</code></td><td><span class="badge badge-ghost badge-outline badge-sm whitespace-nowrap">○ to do</span></td></tr>
-          <tr class="opacity-75"><td class="whitespace-nowrap font-mono" style="overflow-wrap:normal">T18</td><td><code>server/node_server.py</code>: <code>/raft</code>, <code>/state</code>, <code>/admin/partition</code>, tick loop, <code>step()</code></td><td><span class="badge badge-ghost badge-outline badge-sm whitespace-nowrap">○ to do</span></td></tr>
-          <tr class="opacity-75"><td class="whitespace-nowrap font-mono" style="overflow-wrap:normal">T19</td><td><code>POST /client/write</code> with waiting writes (200 / 421 / 503 / 504)</td><td><span class="badge badge-ghost badge-outline badge-sm whitespace-nowrap">○ to do</span></td></tr>
-          <tr class="opacity-75"><td class="whitespace-nowrap font-mono" style="overflow-wrap:normal">T20</td><td><code>Dockerfile</code> + <code>docker-compose.yml</code> (<strong>Docker must be installed first</strong>)</td><td><span class="badge badge-ghost badge-outline badge-sm whitespace-nowrap">○ to do</span></td></tr>
-          <tr class="bg-base-300/50"><td class="whitespace-nowrap font-mono" style="overflow-wrap:normal">G5</td><td><strong>Gate 5 · cluster runs in Docker (T16–T20)</strong></td><td><span class="badge badge-ghost badge-outline badge-sm whitespace-nowrap">not reached</span></td></tr>
-          <tr class="opacity-75"><td class="whitespace-nowrap font-mono" style="overflow-wrap:normal">T21</td><td><code>dashboard/app.py</code>: cluster fan-out, write, partition/heal, kill/start</td><td><span class="badge badge-ghost badge-outline badge-sm whitespace-nowrap">○ to do</span></td></tr>
-          <tr class="opacity-75"><td class="whitespace-nowrap font-mono" style="overflow-wrap:normal">T22</td><td><code>dashboard/static/index.html</code>: node cards, controls, event feed, auto-write</td><td><span class="badge badge-ghost badge-outline badge-sm whitespace-nowrap">○ to do</span></td></tr>
-          <tr class="opacity-75"><td class="whitespace-nowrap font-mono" style="overflow-wrap:normal">T23</td><td><code>README.md</code>: design summary, trade-offs, how to run, AI usage</td><td><span class="badge badge-ghost badge-outline badge-sm whitespace-nowrap">○ to do</span></td></tr>
-          <tr class="bg-base-300/50"><td class="whitespace-nowrap font-mono" style="overflow-wrap:normal">G6</td><td><strong>Gate 6 · ready to submit</strong></td><td><span class="badge badge-ghost badge-outline badge-sm whitespace-nowrap">not reached</span></td></tr>
+          <tr class=""><td class="whitespace-nowrap font-mono" style="overflow-wrap:normal">T12</td><td><code>tests/test_failures.py</code>: restart (R1), minority leader, heal (R2), no majority</td><td><span class="badge badge-success badge-soft badge-sm whitespace-nowrap">✓ done</span></td></tr>
+          <tr class=""><td class="whitespace-nowrap font-mono" style="overflow-wrap:normal">T13a</td><td><code>RaftConfig.max_entries_per_append</code>: optional cap on entries per AppendEntries</td><td><span class="badge badge-success badge-soft badge-sm whitespace-nowrap">✓ done</span></td></tr>
+          <tr class=""><td class="whitespace-nowrap font-mono" style="overflow-wrap:normal">T13</td><td><code>test_figure8</code>: the scripted Figure 8 scenario (R6), using a small batch cap</td><td><span class="badge badge-success badge-soft badge-sm whitespace-nowrap">✓ done</span></td></tr>
+          <tr class=""><td class="whitespace-nowrap font-mono" style="overflow-wrap:normal">T14</td><td><code>tests/safety_checks.py</code>: the 5 safety properties, run after every simulator step</td><td><span class="badge badge-success badge-soft badge-sm whitespace-nowrap">✓ done</span></td></tr>
+          <tr class=""><td class="whitespace-nowrap font-mono" style="overflow-wrap:normal">T15</td><td><code>tests/test_fuzz.py</code>: randomized fault schedules over many seeds</td><td><span class="badge badge-success badge-soft badge-sm whitespace-nowrap">✓ done</span></td></tr>
+          <tr class="bg-base-300/50"><td class="whitespace-nowrap font-mono" style="overflow-wrap:normal">G4</td><td><strong>Gate 4 · correctness evidence complete (T12–T15)</strong></td><td><span class="badge badge-success badge-sm whitespace-nowrap">approved</span></td></tr>
+          <tr class="opacity-60"><td class="whitespace-nowrap font-mono" style="overflow-wrap:normal">T16</td><td class="line-through">Duplicate detection for retried writes</td><td><span class="badge badge-ghost badge-outline badge-sm whitespace-nowrap">✕ cut</span></td></tr>
+          <tr class=""><td class="whitespace-nowrap font-mono" style="overflow-wrap:normal">T17</td><td><code>server/file_storage.py</code>: <code>FileStorage</code> (41 lines, 2 tests)</td><td><span class="badge badge-success badge-soft badge-sm whitespace-nowrap">✓ done</span></td></tr>
+          <tr class=""><td class="whitespace-nowrap font-mono" style="overflow-wrap:normal">T18</td><td><code>server/node_server.py</code>: the whole node server in one file, client writes included (143 lines, 4 tests)</td><td><span class="badge badge-success badge-soft badge-sm whitespace-nowrap">✓ done</span></td></tr>
+          <tr class="opacity-60"><td class="whitespace-nowrap font-mono" style="overflow-wrap:normal">T19</td><td class="line-through">Client writes (built inside T18)</td><td><span class="badge badge-ghost badge-outline badge-sm whitespace-nowrap">✕ cut</span></td></tr>
+          <tr class=""><td class="whitespace-nowrap font-mono" style="overflow-wrap:normal">T20</td><td><code>Dockerfile</code> + <code>docker-compose.yml</code></td><td><span class="badge badge-success badge-soft badge-sm whitespace-nowrap">✓ done</span></td></tr>
+          <tr class="bg-base-300/50"><td class="whitespace-nowrap font-mono" style="overflow-wrap:normal">G5</td><td><strong>Gate 5 · cluster runs in Docker (T17–T20)</strong></td><td><span class="badge badge-success badge-sm whitespace-nowrap">approved</span></td></tr>
+          <tr class=""><td class="whitespace-nowrap font-mono" style="overflow-wrap:normal">T21</td><td><code>dashboard/app.py</code> (80 lines) + <code>dashboard/static/index.html</code> (157 lines), no tests</td><td><span class="badge badge-warning badge-sm whitespace-nowrap">● in review</span></td></tr>
+          <tr class="opacity-60"><td class="whitespace-nowrap font-mono" style="overflow-wrap:normal">T22</td><td class="line-through">Dashboard page (built inside T21)</td><td><span class="badge badge-ghost badge-outline badge-sm whitespace-nowrap">✕ cut</span></td></tr>
+          <tr class=""><td class="whitespace-nowrap font-mono" style="overflow-wrap:normal">T23</td><td><code>README.md</code>: design summary, trade-offs, how to run, AI usage (128 lines)</td><td><span class="badge badge-warning badge-sm whitespace-nowrap">● in review</span></td></tr>
+          <tr class="bg-warning/15" id="gate-6"><td class="whitespace-nowrap font-mono border-l-4 border-warning" style="overflow-wrap:normal">G6</td><td><strong>Gate 6 · ready to submit</strong><br><span class="text-xs opacity-80">T21 and T23 are committed. This is the last gate.</span></td><td><span class="badge badge-warning badge-sm whitespace-nowrap">waiting for your review</span></td></tr>
         </tbody>
       </table>
     </div>
-    <div role="alert" class="alert alert-soft alert-warning text-sm">
-      <span><strong>Where things are waiting: Gate 4.</strong> The correctness evidence (T12–T15, §9) is complete. Look at the five tasks in review first, then approve Gate 4 so the demo work (T16 onwards) can start.
-      <strong>Where to cut if behind:</strong> the Docker demo and the dashboard (T20–T22) shrink first, for example to a terminal-only demo. The correctness evidence is already in place.</span>
+    <div role="alert" class="alert alert-soft alert-warning text-sm" data-lavish-revision="r4">
+      <span><strong>Where things are waiting: Gate 6.</strong> Everything is built and checked. Look at the two tasks in review, the dashboard (T21) and the README (T23), then approve Gate 6 to submit.</span>
     </div>
   </section>
 
@@ -1181,17 +1171,17 @@ from term 2 = {'op': 'noop'} at tick 49</code></pre>
       <table class="table table-sm">
         <thead><tr><th>Risk or trade-off</th><th>Why it matters</th><th>Mitigation / how I'd explain it</th></tr></thead>
         <tbody>
-          <tr><td>Demo work eats the day</td><td>The brief values small, well-tested work</td><td>Built last, after the correctness evidence, and kept small</td></tr>
-          <tr><td>Docker isn't installed here</td><td>The demo can't run, and T20 can't be checked</td><td>Install Docker Desktop or OrbStack before T20. The tests never need it.</td></tr>
           <tr><td>Partitions are simulated in the app</td><td>Real network failure isn't exercised</td><td>Say so openly. The core can't tell the difference. iptables would be the next step.</td></tr>
-          <tr><td>docker.sock is mounted into the dashboard</td><td>It gives root-level access to Docker on the host</td><td>Local demo only, and documented. The alternatives were weighed in decision Q2 (§14).</td></tr>
           <tr><td>The real runtime isn't deterministic</td><td>Demo runs can't be reproduced</td><td>The seeded tests are the evidence; the demo only illustrates.</td></tr>
           <tr><td>FileStorage rewrites the whole file</td><td>Each write costs time proportional to the log size</td><td>Fine at demo scale. The real fix is an append-only log file.</td></tr>
+          <tr data-lavish-revision="r4"><td>A retried write can apply twice</td><td>There is no duplicate detection (T16 was cut). A write that times out (504) may also still commit later</td><td>Stated as a limitation in the README. A 504 means "not confirmed", not "failed".</td></tr>
           <tr><td>No snapshots</td><td>The log grows forever, and a restart replays all of it</td><td>Out of scope. A natural topic if they ask to extend the design live.</td></tr>
-          <tr><td>Term inflation without pre-vote</td><td>A node rejoining with a high term can depose a healthy leader</td><td>Visible in scenario 4. Pre-vote is the extension.</td></tr>
+          <tr><td>Term inflation without pre-vote</td><td>A node rejoining with a high term can force an unnecessary election</td><td>Visible in scenario 4. Pre-vote is the extension.</td></tr>
           <tr data-lavish-revision="r3"><td>AI-written Raft logic has subtle bugs</td><td>Figure 8, truncation and timer resets are the classic ones</td><td>Each rule (R1–R7) maps to a named test. Dozens of deliberate bugs were injected into scratch copies of the code across the tasks (for example 19 in replication and 15 in commit), and every one failed at least one test. On top of that, the fuzz test runs random faults with the five safety checks after every step (§9). Bugs caught get logged in <code>AI_NOTES.md</code>.</td></tr>
           <tr data-lavish-revision="r3"><td>Learned: the first fuzzer was too weak</td><td>Plain random faults found the R6 bug in 1 seed of 8,000, and a vote lost on restart in 4 of 8,000</td><td>Strikes on new leaders and same-tick reboots were added, and the same bugs are now found in 55 and 109 seeds. The fault generators were measured against known bugs, and <code>test_schedules_are_not_trivial</code> guards against a fuzzer that does nothing.</td></tr>
+          <tr data-lavish-revision="r4"><td>Test deadlines are measured, not derived</td><td>Each deadline is about twice the slowest case seen over its seeds</td><td>Changing the election timeouts means re-measuring them.</td></tr>
           <tr data-lavish-revision="r3"><td>Learned: R6 was untestable at cluster level</td><td>With unlimited batches and the R7 noop, R6 never changes an outcome, so a Figure 8 test could not fail</td><td>The optional batch cap (T13a). <code>test_figure8</code> uses a cap of 1 and fails on every seed with R6 removed.</td></tr>
+          <tr data-lavish-revision="r4"><td>Learned: the AI over-built until it was given line budgets</td><td>Asked for thorough tests and explanations, it wrote about 3,400 lines of tests for about 900 lines of code, which can't be reviewed in a day</td><td>"Simplicity first" (§14): line budgets and fewer features for the remaining tasks, and the tests trimmed by a third. With budgets, the node server came in at 143 lines (limit about 150), file storage at 41, and the dashboard at 80 lines of Python plus 157 of HTML.</td></tr>
         </tbody>
       </table>
     </div>
@@ -1208,6 +1198,7 @@ from term 2 = {'op': 'noop'} at tick 49</code></pre>
       <span class="badge badge-outline">Real network faults (iptables / tc)</span>
       <span class="badge badge-outline">Auth / TLS</span>
       <span class="badge badge-outline">Performance tuning</span>
+      <span class="badge badge-outline">Duplicate detection for retried writes</span>
     </div>
     <p class="text-sm opacity-75 max-w-3xl">There's no client read API. The dashboard reads each node's local state directly, which is exactly what makes nodes disagreeing visible.</p>
   </section>
@@ -1221,23 +1212,25 @@ from term 2 = {'op': 'noop'} at tick 49</code></pre>
         <thead><tr><th>#</th><th>Decision</th><th>Why, in one line</th><th>Set by</th></tr></thead>
         <tbody>
           <tr id="d-q1"><td class="whitespace-nowrap font-semibold" style="overflow-wrap:normal">Q1</td><td><strong>5 nodes</strong> in the demo</td><td>The partition demo can trap the leader plus one follower in a minority, and 5 nodes tolerate 2 failures.</td><td><span class="badge badge-soft badge-sm whitespace-nowrap" style="overflow-wrap:normal">recommended</span></td></tr>
-          <tr id="d-q2"><td class="whitespace-nowrap font-semibold" style="overflow-wrap:normal">Q2</td><td>The dashboard crashes nodes with <strong>Docker kill/start through the mounted <code>docker.sock</code></strong></td><td>The process really dies and restarts from disk. The cost is root-level Docker access for the dashboard, in a local demo only.</td><td><span class="badge badge-soft badge-sm whitespace-nowrap" style="overflow-wrap:normal">recommended</span></td></tr>
+          <tr id="d-q2" data-lavish-revision="r4"><td class="whitespace-nowrap font-semibold" style="overflow-wrap:normal">Q2</td><td>Nodes are killed and started <strong>from a terminal</strong>: <code>docker compose kill node3</code> / <code>docker compose start node3</code></td><td>The process really dies and restarts from disk, and the dashboard needs no access to Docker.</td><td><span class="badge badge-primary badge-soft badge-sm whitespace-nowrap" style="overflow-wrap:normal">your call</span></td></tr>
           <tr id="d-q3"><td class="whitespace-nowrap font-semibold" style="overflow-wrap:normal">Q3</td><td>Partitions are <strong>a blocked-peer list inside each node</strong> (app level)</td><td>Any shape works, including "leader + 1 | rest", healing is instant, and it behaves like the simulator.</td><td><span class="badge badge-soft badge-sm whitespace-nowrap" style="overflow-wrap:normal">recommended</span></td></tr>
           <tr id="d-q4"><td class="whitespace-nowrap font-semibold" style="overflow-wrap:normal">Q4</td><td><strong>One-way messages</strong>: every Raft message is <code>POST /raft</code> → 204, and a reply is a separate POST</td><td>It matches the simulator exactly.</td><td><span class="badge badge-soft badge-sm whitespace-nowrap" style="overflow-wrap:normal">recommended</span></td></tr>
-          <tr id="d-q5"><td class="whitespace-nowrap font-semibold" style="overflow-wrap:normal">Q5</td><td><strong>aiohttp</strong> is the only runtime dependency</td><td>One library covers the server, the client and the <code>docker.sock</code> calls.</td><td><span class="badge badge-soft badge-sm whitespace-nowrap" style="overflow-wrap:normal">recommended</span></td></tr>
+          <tr id="d-q5"><td class="whitespace-nowrap font-semibold" style="overflow-wrap:normal">Q5</td><td><strong>aiohttp</strong> is the only runtime dependency</td><td>One library covers the node servers, the dashboard and the HTTP calls between them.</td><td><span class="badge badge-soft badge-sm whitespace-nowrap" style="overflow-wrap:normal">recommended</span></td></tr>
           <tr id="d-q6"><td class="whitespace-nowrap font-semibold" style="overflow-wrap:normal">Q6</td><td><strong>uv + Python 3.12</strong> (<code>uv run pytest</code>)</td><td>One tool installs Python and the dependencies, and 3.12 matches the Docker image. Installed.</td><td><span class="badge badge-soft badge-sm whitespace-nowrap" style="overflow-wrap:normal">recommended</span></td></tr>
           <tr id="d-q7"><td class="whitespace-nowrap font-semibold" style="overflow-wrap:normal">Q7</td><td>Dashboard in <strong>plain HTML/CSS/JS</strong>, no CDN, no build step</td><td>It works offline, so a bad network at the panel can't break it.</td><td><span class="badge badge-soft badge-sm whitespace-nowrap" style="overflow-wrap:normal">recommended</span></td></tr>
-          <tr id="d-q8"><td class="whitespace-nowrap font-semibold" style="overflow-wrap:normal">Q8</td><td>Extras in scope: <strong>client duplicate detection, a dashboard event feed, an auto-write toggle</strong></td><td>Each is small and visible in the demo. The other extras offered in draft 3 (one-click scenarios, an HTTP smoke test, faster backtracking hints) stay out.</td><td><span class="badge badge-soft badge-sm whitespace-nowrap" style="overflow-wrap:normal">recommended</span></td></tr>
+          <tr id="d-q8" data-lavish-revision="r4"><td class="whitespace-nowrap font-semibold" style="overflow-wrap:normal">Q8</td><td>Extras in scope: <strong>only the dashboard event list</strong></td><td>Small and visible in the demo. The other extras offered in draft 3 are out (the cuts are listed under Simplicity first).</td><td><span class="badge badge-primary badge-soft badge-sm whitespace-nowrap" style="overflow-wrap:normal">your call</span></td></tr>
           <tr id="d-q10"><td class="whitespace-nowrap font-semibold" style="overflow-wrap:normal">Q10</td><td>The node <strong>queues its outputs</strong> (an outbox), and drivers collect them with <code>take_*()</code> after every call</td><td>Saving before sending (R1) is guaranteed by the structure, and the node holds no reference to the network, so a unit test just reads <code>take_messages()</code>. See §4.</td><td><span class="badge badge-soft badge-sm whitespace-nowrap" style="overflow-wrap:normal">recommended</span></td></tr>
           <tr id="d-storage"><td class="whitespace-nowrap font-semibold" style="overflow-wrap:normal">Storage</td><td>Tests use <strong><code>MemoryStorage</code></strong>. The demo uses <strong>one JSON file per node</strong>: temp file, fsync and <code>os.replace</code> on every change</td><td>A killed container loses its memory, so without a file a node could vote twice or forget acknowledged entries (R1). The rename means a kill mid-write never leaves half a file.</td><td><span class="badge badge-primary badge-soft badge-sm whitespace-nowrap" style="overflow-wrap:normal">your call</span></td></tr>
           <tr id="d-t13"><td class="whitespace-nowrap font-semibold" style="overflow-wrap:normal">T13</td><td><strong>Option A: an optional batch cap</strong>, <code>max_entries_per_append</code></td><td>With unlimited batches and the R7 noop, R6 never changes an outcome at the cluster level, so Figure 8 couldn't fail. With a cap it does, and Figure 8 becomes testable.</td><td><span class="badge badge-primary badge-soft badge-sm whitespace-nowrap" style="overflow-wrap:normal">your call</span></td></tr>
           <tr id="d-naming"><td class="whitespace-nowrap font-semibold" style="overflow-wrap:normal">Naming</td><td><strong>"Safety properties"</strong>, in <code>tests/safety_checks.py</code>, <code>SafetyChecker</code> and <code>SafetyViolation</code></td><td>It is the Raft paper's own term (its Figure 3) for these checks, and plain enough to explain without a glossary. The earlier jargon name was replaced throughout the code.</td><td><span class="badge badge-primary badge-soft badge-sm whitespace-nowrap" style="overflow-wrap:normal">your call</span></td></tr>
+          <tr id="d-simplicity" data-lavish-revision="r4"><td class="whitespace-nowrap font-semibold" style="overflow-wrap:normal">Simplicity first</td><td><strong>Prefer the simple version, and write the limitation down</strong> (2026-10-12)</td><td>The code had become too elaborate to review in a day. The remaining tasks got line budgets and fewer features, and the tests were trimmed (§9). Cut: duplicate detection for retried writes, the dashboard's Kill/Start buttons and the Docker socket, the auto-write toggle, the separate 503 answer for overwritten writes, and tests for the dashboard.</td><td><span class="badge badge-primary badge-soft badge-sm whitespace-nowrap" style="overflow-wrap:normal">your call</span></td></tr>
+          <tr id="d-deadlines" data-lavish-revision="r4"><td class="whitespace-nowrap font-semibold" style="overflow-wrap:normal">Deadlines, not bounds</td><td><strong>Time limits in tests are called deadlines</strong> (<code>*_DEADLINE</code>, in ticks)</td><td>"Bound" needed explaining. A deadline says what it is: how long the cluster gets before the test fails.</td><td><span class="badge badge-primary badge-soft badge-sm whitespace-nowrap" style="overflow-wrap:normal">your call</span></td></tr>
         </tbody>
       </table>
     </div>
   </section>
 
-  <footer class="text-xs opacity-60 pb-8">Raft KV design · draft 4 · requirements in ASSIGNMENT.md · background in notes/ · canonical spec in DESIGN.md</footer>
+  <footer class="text-xs opacity-60 pb-8">Raft KV design · draft 5 · requirements in ASSIGNMENT.md · background in notes/ · canonical spec in DESIGN.md</footer>
 </main>
 </body>
 </html>
