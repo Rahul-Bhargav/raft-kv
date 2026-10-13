@@ -224,4 +224,4 @@ the majority side elects a leader and commits, and after healing the old leader 
 ### T23 · README
 `README.md`. **Budget: about 120 lines.** What it is, how to run the tests and the demo, the design in a few paragraphs with the main
 trade-offs, the four demo scenarios with the terminal commands, known limitations, and how AI was used (summarized from `AI_NOTES.md`).
-*Notes:* written by the orchestrator once the final numbers were known (1,117 tests, about 14 s). 124 lines. The R5 and lost-vote fuzz rates are quoted from the agent's 8,000-seed run and marked as not re-run.
+*Notes:* written by the orchestrator once the final numbers were known (1,117 tests, about 14 s). 128 lines. The R5 and lost-vote fuzz rates are quoted from the agent's 8,000-seed run and marked as not re-run.
