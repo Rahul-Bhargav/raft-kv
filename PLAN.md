@@ -27,7 +27,7 @@ in a few minutes and any agent can pick it up cold. The spec is in `DESIGN.md`, 
 | T13a | `RaftConfig.max_entries_per_append`: optional cap on entries per AppendEntries | T12 | review |
 | T13 | `test_figure8`: scripted Figure 8 scenario (R6), using a small batch cap | T13a | review |
 | T14 | `tests/invariants.py`: the 5 invariants, run after every simulator step | T12 | review |
-| T15 | `tests/test_fuzz.py`: randomized fault schedules over many seeds | T14 | todo |
+| T15 | `tests/test_fuzz.py`: randomized fault schedules over many seeds | T14 | review |
 | **G4** | **Gate: correctness evidence complete** | T12–T15 | waiting |
 | T16 | KV duplicate detection by `(client_id, seq)` | G4 | todo |
 | T17 | `server/file_storage.py`: `FileStorage` | G4 | todo |
@@ -165,6 +165,7 @@ a clear failure message that includes the tick and node IDs.
 partitions and heals, drop/dup/delay, random writes. Invariants are checked every tick. At the end: heal, restart everyone, and
 require a leader, every acknowledged write applied everywhere, and equal KV stores. Seeds come from `FUZZ_SEEDS` (default sized so the
 whole suite runs in about 30 s). A failure message prints the seed.
+*Notes:* one test per seed (`FUZZ_SEEDS`, default 1000: the whole suite takes about 13 s here), plus `test_schedules_are_not_trivial`, which checks that 20 seeds really do crash, reboot, partition, strike and acknowledge writes. Per seed: network delays, drops and duplicates; a batch cap of none, 1 or 2; crashes (at most 2 down), restarts, reboots (crash and restart at once), partitions and heals; and strikes on new leaders (none, half or all, crashed or cut off 1-15 ticks after they win). Then heal, restart everyone, settle within 1200 ticks (2x the worst of seeds 0-9999), and require every acknowledged write on every node and equal KV stores. Strikes and reboots were added after measuring: without strikes, removing R6 failed 1 seed in 8000; without reboots, a vote lost on restart failed 4 in 8000. **Evidence** (seeds 0-7999, scratch copies): R6 removed fails 55 (0.69%), all Leader Completeness; R5 truncating unconditionally fails 5006 (63%): 3346 State Machine Safety, 979 Leader Completeness, 681 no settled leader at the end; a vote lost on restart fails 109 (1.4%): 100 Election Safety, 9 the node's own two-leaders assert. The default 1000 seeds catch all three (7, 618 and 6 seeds). Large runs on the real code: seeds 0-9999 all pass (in batches), and `FUZZ_SEEDS=5000` takes 56 s. **Outside the named file:** the R5 runs showed two gaps in `tests/invariants.py`, fixed here. A node that deleted or replaced an entry it had committed either crashed the checker with an `IndexError` (deleted in the step it was applied) or went unnoticed (deleted later). Both are now State Machine Safety violations, each with a unit test; the T14 evidence was rerun and is unchanged.
 
 ### T16 · Duplicate detection
 `raft/kv.py`, `tests/test_kv.py`. Skip a command whose `(client_id, seq)` is ≤ the last applied seq for that client.

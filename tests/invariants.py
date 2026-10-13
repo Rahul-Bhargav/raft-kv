@@ -16,7 +16,8 @@ that history shows the bug (see State Machine Safety below).
 3. Leader Completeness: an entry committed in some term is in the log of every leader of every later
    term.
 4. State Machine Safety: no two nodes apply different entries at the same index, and neither does
-   one node before and after a restart.
+   one node before and after a restart. A node that deletes or replaces an entry it has committed
+   is reported here too.
 5. No lost acknowledged writes: an acknowledged write shows in the KV store of every node that has
    applied that far, unless the node has since applied a later entry that sets the same key.
 
@@ -156,6 +157,7 @@ class Invariants:
             start = _first_difference(old, log)
             if start < len(old):
                 self._rewritten.add(node_id)  # entries it already had were removed or replaced
+                self._check_committed_entry_kept(cluster, node_id, start + 1, old[start])
             for position in range(start, len(log)):
                 index, entry = position + 1, log[position]
                 prev_term = log[position - 1].term if position > 0 else 0
@@ -219,13 +221,31 @@ class Invariants:
         for node in _live(cluster):
             for index in range(self._committed_upto[node.node_id] + 1, node.commit_index + 1):
                 if index > len(self.committed):
-                    entry = node.storage.entry_at(index)
+                    entry = _committed_entry(cluster, node, index)
                     self.committed.append((entry, node.term, node.node_id, cluster.now))
                     new.append(index)
             self._committed_upto[node.node_id] = node.commit_index
         return new
 
     # --- 4. State Machine Safety ---
+
+    def _check_committed_entry_kept(
+        self, cluster: SimCluster, node_id: str, index: int, old_entry: Entry
+    ) -> None:
+        """A node's log changed at `index`: that must be above what it had committed.
+
+        A node never deletes or replaces an entry it has committed (RaftNode asserts this), and
+        the checks that read what a node applied rely on it. Compares with the node's commit index
+        at the previous step; a restarted node starts again from 0 (see _notice_restarts).
+        """
+        committed = self._committed_upto.get(node_id, 0)
+        if cluster.nodes[node_id] is not None and index <= committed:
+            _fail(
+                "State Machine Safety",
+                cluster.now,
+                f"{node_id} deleted or replaced index {index} (from term {old_entry.term}), but it "
+                f"had committed up to index {committed}",
+            )
 
     def _check_state_machine_safety(self, cluster: SimCluster) -> list[tuple[str, int, Entry]]:
         """Compare every newly applied entry with the first entry ever applied at that index.
@@ -236,13 +256,13 @@ class Invariants:
         moment the live nodes agreed with each other.
 
         Reads each entry from the node's log after the step. That is the entry it applied: a node
-        never changes an entry at or below its commit index (RaftNode asserts this).
+        never changes an entry at or below its commit index (see _committed_entry).
         Returns (node, index, entry) for every newly applied index, in order.
         """
         newly_applied = []
         for node in _live(cluster):
             for index in range(self._applied_upto[node.node_id] + 1, node.last_applied + 1):
-                entry = node.storage.entry_at(index)
+                entry = _committed_entry(cluster, node, index)
                 first, first_node, tick = self.applied.setdefault(
                     index, (entry, node.node_id, cluster.now)
                 )
@@ -311,6 +331,25 @@ class Invariants:
 
 def _live(cluster: SimCluster) -> list[RaftNode]:
     return [node for node in cluster.nodes.values() if node is not None]
+
+
+def _committed_entry(cluster: SimCluster, node: RaftNode, index: int) -> Entry:
+    """The entry a node has committed at `index`, read from its log.
+
+    A node never deletes an entry at or below its commit index (RaftNode asserts this), so its
+    log still holds what it committed and applied. A node that did would have thrown away an
+    entry it may already have applied, which can then be replaced by a different one: we report
+    that under State Machine Safety, rather than fail to read the entry.
+    """
+    last = node.storage.last_index()
+    if index > last:
+        _fail(
+            "State Machine Safety",
+            cluster.now,
+            f"{node.node_id} has committed up to index {node.commit_index}, but its log ends at "
+            f"index {last}: it deleted entries it had committed",
+        )
+    return node.storage.entry_at(index)
 
 
 def _first_difference(old: list[Entry], new: list[Entry]) -> int:

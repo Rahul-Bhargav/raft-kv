@@ -132,6 +132,34 @@ def test_state_machine_safety_remembers_what_a_node_applied_before_restarting():
     )
 
 
+def test_a_node_that_deletes_committed_entries_is_reported_not_a_crash():
+    # With R5 broken, a node can apply an entry and delete it within one step. Then the checker
+    # can't read the entry it applied, and must say so rather than raise an IndexError.
+    cluster = SimCluster(seed=0)
+    give_log(cluster, "n1", put("a", "1", term=1))
+    cluster.nodes["n1"].commit_index = cluster.nodes["n1"].last_applied = 2
+    with pytest.raises(InvariantViolation) as error:
+        Invariants()(cluster)
+    assert str(error.value) == (
+        "State Machine Safety violated at tick 0: n1 has committed up to index 2, but its log ends "
+        "at index 1: it deleted entries it had committed"
+    )
+
+
+def test_a_node_that_later_deletes_a_committed_entry_is_reported():
+    cluster, check = SimCluster(seed=0), Invariants()
+    give_log(cluster, "n1", put("a", "1", term=1), put("b", "1", term=1))
+    apply_up_to(cluster, "n1", 2)
+    check(cluster)
+    cluster.storages["n1"].truncate_from(2)  # its commit index stays at 2
+    with pytest.raises(InvariantViolation) as error:
+        check(cluster)
+    assert str(error.value) == (
+        "State Machine Safety violated at tick 0: n1 deleted or replaced index 2 (from term 1), "
+        "but it had committed up to index 2"
+    )
+
+
 def test_no_lost_acknowledged_writes_fires_when_a_node_s_kv_store_lacks_the_write():
     # n1 leads term 1 and applies its own write: that acknowledges it. n2 then applies the same
     # entry, but its KV store doesn't show it (as if the driver skipped an entry).

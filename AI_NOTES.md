@@ -155,3 +155,37 @@ The README's AI section is summarized from this file. Newest entries go at the b
   - The KV check replays applied entries into a plain dict, not `KVStore`, so it checks the driver independently.
 - **Cost:** the checks are incremental (new entries, newly committed and applied indexes, new leaders). The suite went from
   0.62 s to 1.14 s; most of the extra is Log Matching's per-step log comparison on the load test's long logs (hundreds of entries).
+
+## 2026-10-12 · Fuzz test (T15, written by Claude Opus)
+- **What runs:** `tests/test_fuzz.py`, one test per seed (default 1000, `FUZZ_SEEDS` to change; the whole suite takes about 13 s on
+  this machine). Each seed randomizes the network (delays, 0-20% drops, 0-30% duplicates), the batch cap (none, 1 or 2), crashes
+  (at most 2 of 5 down), restarts, reboots, partitions, heals, strikes on new leaders, and client writes made while all of that
+  goes on. All five invariants run every tick. At the end the network heals, every node restarts, and the test requires a settled
+  leader, every acknowledged write on every node and equal KV stores. A failure prints the seed and the command to rerun it alone.
+- **Measured, not assumed, and the first version was too weak:** with plain random faults, removing R6 failed 1 seed in 8,000.
+  Figure 8 needs a leader lost in a window of a few ticks (after it copies an older term's entry to a majority, before its own
+  entry gets there), and random crashes rarely land there. Longer runs, more crashes and a cap of 1 everywhere barely helped.
+  Striking new leaders (crash or cut off 1-15 ticks after they win; per seed none, half or all of them) raised it to 55 in
+  8,000 (0.69%). Likewise a vote lost on restart failed 4 seeds in 8,000 until reboots (crash and restart in the same tick, so
+  the node is back while the election is still running) raised it to 109 (1.4%). Both are generic faults, not aimed at one bug.
+- **Required evidence** (scratch copies, seeds 0-7999, the test's own random cap):
+  - R6's term check removed: 55 seeds fail (0.69%), all on Leader Completeness, e.g. `n3 leads term 11 but lacks index 2 from
+    term 2 ..., committed by term 10`. With Leader Completeness switched off, 37 seeds still fail: State Machine Safety 25 (for
+    example an acknowledged write k43=v43 applied on n1, then a noop applied at the same index on n3), and 12 on the node's
+    own "deleting committed" assert.
+  - R5 truncating on every AppendEntries: 5,006 seeds fail (63%): State Machine Safety 3,346 (a node deleted an entry it had
+    committed), Leader Completeness 979, and 681 never settle at the end with no invariant broken. I checked one of those (seed
+    3 before the checker fix below): a follower had deleted entries it had confirmed, the leader still counted them and
+    ignored the follower's refusals as stale, so the follower never caught up.
+  - A vote not kept across a restart: 109 seeds fail (1.4%): Election Safety 100, and the node's own two-leaders assert 9.
+  - The default 1000 seeds catch all three: 7, 618 and 6 failing seeds.
+- **The fuzzer found two gaps in my own T14 checker,** both under the R5 bug, both fixed in this commit. A node applied an
+  entry and deleted it within one step, and the checker crashed with an `IndexError` reading it. And a node that deleted a
+  committed entry in a later step wasn't noticed at all: only the end-of-run check failed. Both are now State Machine Safety
+  violations ("n2 deleted or replaced index 4 (from term 5), but it had committed up to index 4"), each with a unit test.
+  `RaftNode` asserts it never does this, and the checker relied on that without checking it. The T14 evidence (each invariant
+  firing, and the Figure 8 case) was rerun afterwards and is unchanged.
+- **Large runs on the real code:** seeds 0-9999 all pass, run in batches (the worst settle time over them is 604 ticks; the bound
+  is 1200). Through pytest, `FUZZ_SEEDS=5000` passes in 56 s. Before the last checker fix, `FUZZ_SEEDS=10000` passed in 114 s.
+- **Guarding against a toothless fuzzer:** `test_schedules_are_not_trivial` checks that 20 seeds really crash, reboot,
+  partition, strike and acknowledge writes (at least half of the measured counts), so a broken fault injector can't pass quietly.
