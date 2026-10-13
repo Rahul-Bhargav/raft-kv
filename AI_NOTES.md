@@ -43,7 +43,7 @@ The README's AI section is summarized from this file. Newest entries go at the b
 - **Spec gap:** `test_follower_keeps_leader_under_load` (R4) names a load, but there are no client writes before T11. For now the
   load is the network (half of all messages duplicated, delays up to 8 ticks, no drops), so any election after the first is a
   timer bug. T11 should add writes to it.
-- **Test bounds are measured, not guessed:** each "elected within N ticks" bound is about twice the worst case seen over the
+- **Test deadlines are measured, not guessed:** each "elected within N ticks" deadline is about twice the worst case seen over the
   test's seeds. The split-vote test narrows timeouts to [30, 35) and checks that most seeds really did split, so it can't pass
   without exercising the tie-break.
 
@@ -110,7 +110,7 @@ The README's AI section is summarized from this file. Newest entries go at the b
   AppendEntries, as real implementations do. All existing tests pass with no test code changed.
 - **Judgment call:** the cap only limits message size. A success reply doesn't send the next batch; the next heartbeat or
   proposal does. The alternative (send at once on success) also fires with no cap and changes default traffic. In a scratch copy
-  it pushed one T12 seed past its election bound.
+  it pushed one T12 seed past its election deadline.
 - **R6 now has a unit test with real replies:** with a cap of 1 or 2, followers confirm 20 term-1 entries long before the new
   leader's noop, and the leader's commit index must stay at 0 until the noop is on 3 of 5. Removing R6's term check in a scratch
   copy now fails that test, not only the one with hand-written replies. Ignoring the cap or going one past it fails the cap tests.
@@ -185,7 +185,7 @@ The README's AI section is summarized from this file. Newest entries go at the b
   violations ("n2 deleted or replaced index 4 (from term 5), but it had committed up to index 4"), each with a unit test.
   `RaftNode` asserts it never does this, and the checker relied on that without checking it. The T14 evidence (each safety property
   firing, and the Figure 8 case) was rerun afterwards and is unchanged.
-- **Large runs on the real code:** seeds 0-9999 all pass, run in batches (the worst settle time over them is 604 ticks; the bound
+- **Large runs on the real code:** seeds 0-9999 all pass, run in batches (the worst settle time over them is 604 ticks; the deadline
   is 1200). Through pytest, `FUZZ_SEEDS=5000` passes in 56 s. Before the last checker fix, `FUZZ_SEEDS=10000` passed in 114 s.
 - **Guarding against a toothless fuzzer:** `test_schedules_are_not_trivial` checks that 20 seeds really crash, reboot,
   partition, strike and acknowledge writes (at least half of the measured counts), so a broken fault injector can't pass quietly.
@@ -195,3 +195,16 @@ The README's AI section is summarized from this file. Newest entries go at the b
   explain before I can explain the code. Renamed to `tests/safety_checks.py`, `SafetyChecker` and `SafetyViolation`, and the docs now
   say "safety properties", which is the Raft paper's own term (Figure 3) for exactly these checks.
 - **Verified:** no mention of the old name is left in code or docs, and all 1,243 tests pass unchanged.
+
+## 2026-10-12 · Review of the failure tests: naming
+- **What I asked:** reading `tests/test_failures.py`, I didn't know what constants like `ELECTION_BOUND` and
+  `FOLLOWER_APPLY_BOUND` were or why they were there. The AI's names assumed I'd know "bound" means a time limit.
+- **What they are:** deadlines, in ticks. Tests of "something good eventually happens" (a leader is elected, a follower catches up)
+  need a limit, or a broken implementation would hang the test forever. "Nothing bad ever happens" needs no deadline, because
+  the safety checks run after every tick. Each deadline is about twice the slowest case measured over the test's seeds.
+- **Fix:** every `*_BOUND` constant is now `*_DEADLINE` (and `CAMPAIGN_TICKS` is `CAMPAIGN_DEADLINE`), in all four test files that
+  used them, with a plain-words comment above them. A pure rename: 1,243 tests pass unchanged.
+- **Pattern I'm watching for:** this is the third time AI-written code used a term I had to ask about ("durable", "invariants",
+  "bounds"). The code was correct each time, but I can only defend names I'd have chosen myself, so I rename as I review.
+- **Known limitation, left as is:** most deadlines are measured, not derived from `RaftConfig`. Changing the election timeout would
+  mean re-measuring them.

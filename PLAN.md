@@ -112,9 +112,9 @@ Candidates step down on an AppendEntries from a current-term leader. Leave the R
 
 ### T08 · Simulated cluster + election tests
 `sim/cluster.py`, `tests/test_election.py`. `SimCluster` as in DESIGN.md (`write` comes in T11). Tests:
-exactly one leader is elected within a bound, re-election after crashing the leader, split votes resolve across many seeds,
+exactly one leader is elected within a deadline, re-election after crashing the leader, split votes resolve across many seeds,
 `test_outdated_log_cannot_win` (set up logs through `storages` directly), `test_follower_keeps_leader_under_load`.
-*Notes:* `step()` collects outputs after every call and already applies `take_committed()` to `kvs` (a no-op until T10); `write` is T11. Each node gets its own `Random` seeded from the cluster's, and `events` keeps `(tick, node, event)`. Test bounds are about 2x the worst case measured over their seeds; split votes use timeouts in [30, 35) so most seeds go past term 1. Spec gap: "under load" is 50% duplication with delays up to 8 ticks for now, and T11 should add client writes to that test.
+*Notes:* `step()` collects outputs after every call and already applies `take_committed()` to `kvs` (a no-op until T10); `write` is T11. Each node gets its own `Random` seeded from the cluster's, and `events` keeps `(tick, node, event)`. Test deadlines are about 2x the worst case measured over their seeds; split votes use timeouts in [30, 35) so most seeds go past term 1. Spec gap: "under load" is 50% duplication with delays up to 8 ticks for now, and T11 should add client writes to that test.
 
 ### T09 · Log replication
 `raft/node.py`, `tests/test_node_replication.py`. `propose` (leader only), AppendEntries carrying entries, the follower consistency
@@ -145,7 +145,7 @@ the follower confirms them (each success reply moves `next_index`, and the next 
 never changes an outcome at the cluster level and a Figure 8 test couldn't fail. Real Raft implementations cap batch size,
 and with a cap R6 becomes load-bearing.
 **Done when:** a cap of 1 or 2 still replicates a long log to a lagging follower, and all existing tests pass unchanged (default None).
-*Notes:* reading of "the next send or heartbeat continues": the cap only limits message size and adds no new send, so a lagging follower gets one batch per heartbeat (or proposal). Sending the next batch at once on success would also fire with no cap, whenever entries were proposed after a message went out, and change today's default traffic (in a scratch copy it pushed one T12 seed past its election bound). A cap below 1 raises `ValueError`, since 0 would never replicate anything. Test helpers: `make_node`/`leader` take an optional config, and `exchange` can record what it delivers. Two test comments that said our leader always sends to the end of its log now say "with no batch cap"; no test code or assertion changed. With a cap, real replies confirm old-term entries without the noop, so removing R6's term check now also fails `test_batch_cap_still_replicates_a_long_log_to_lagging_followers`.
+*Notes:* reading of "the next send or heartbeat continues": the cap only limits message size and adds no new send, so a lagging follower gets one batch per heartbeat (or proposal). Sending the next batch at once on success would also fire with no cap, whenever entries were proposed after a message went out, and change today's default traffic (in a scratch copy it pushed one T12 seed past its election deadline). A cap below 1 raises `ValueError`, since 0 would never replicate anything. Test helpers: `make_node`/`leader` take an optional config, and `exchange` can record what it delivers. Two test comments that said our leader always sends to the end of its log now say "with no batch cap"; no test code or assertion changed. With a cap, real replies confirm old-term entries without the noop, so removing R6's term check now also fails `test_batch_cap_still_replicates_a_long_log_to_lagging_followers`.
 
 ### T13 · Figure 8
 `tests/test_failures.py`. Script the Figure 8 scenario from the Raft paper deterministically (partitions/crashes to control
