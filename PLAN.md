@@ -31,7 +31,7 @@ in a few minutes and any agent can pick it up cold. The spec is in `DESIGN.md`, 
 | **G4** | **Gate: correctness evidence complete** | T12–T15 | approved |
 | T16 | ~~KV duplicate detection~~ | n/a | cut |
 | T17 | `server/file_storage.py`: `FileStorage` (about 40 lines, 2 tests) | G4 | review |
-| T18 | `server/node_server.py`: the whole node server in one file (about 150 lines, at most 4 tests) | T17 | todo |
+| T18 | `server/node_server.py`: the whole node server in one file (about 150 lines, at most 4 tests) | T17 | review |
 | T19 | ~~Client writes~~ (merged into T18) | n/a | cut |
 | T20 | `Dockerfile` + `docker-compose.yml` (**the user must install Docker first**) | T18 | todo |
 | **G5** | **Gate: cluster runs in Docker** | T17–T20 | waiting |
@@ -197,6 +197,7 @@ Simplest route: subclass `MemoryStorage` and save after each mutating call.
 - Tests, using `aiohttp.test_utils` inside `asyncio.run` so no new dependency is needed: a one-node server accepts a write and shows it in
   `/state`; a non-leader answers 421; a message from a blocked sender is dropped; a restart with the same `DATA_DIR` keeps its term and log.
 Not handled, by decision: retries applying twice (T16 cut), linearizable reads, TLS/auth.
+*Notes:* 143 lines (`wc -l`) + 77 lines for the 4 listed tests. `build_app(node_id, peers, data_dir, tick_s)` is what tests call; `main()` reads the environment, and drops this node from `PEERS` so every container can get the same list. `main()` has no test: checked by hand with 3 local processes (election, 421, a replicated write, re-election after `kill -9`). The node's `Random` is unseeded on purpose, so election timeouts differ per node and per restart. Not handled: a 504 doesn't mean the write failed (it can still commit later), a malformed body is a 500, writes are `set` only, the save (fsync) blocks the event loop, ticks drift a little (sleep-based), and nothing is logged to stdout. `DESIGN.md`'s `step` bullet still says it "resolves waiting client writes": the write handler polls instead, as this task says.
 
 ### T20 · Docker
 `Dockerfile`, `docker-compose.yml`, `.dockerignore`. **Budget: about 50 lines in total.** One image for every container. `node1`–`node5`
