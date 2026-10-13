@@ -1,7 +1,7 @@
 # Design: Raft KV
 
 This is the canonical spec for implementers. It condenses the reviewed design in
-`.lavish/design.html` (draft 3), which is the visual version with diagrams and rationale.
+`.lavish/design.html` (draft 4), which is the visual version with diagrams and rationale.
 If the two disagree, **this file wins**. Change it only together with the user.
 
 A hand-written Raft implementation in Python 3.12 that replicates a key-value store across 5 nodes.
