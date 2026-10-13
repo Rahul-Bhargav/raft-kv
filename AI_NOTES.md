@@ -218,3 +218,20 @@ The README's AI section is summarized from this file. Newest entries go at the b
   budgets. I accepted some lost edge cases for less code and wrote each one down as a limitation.
 - **Cut:** duplicate detection for retried writes; the dashboard's Kill/Start buttons and Docker socket (nodes are killed from a
   terminal); the auto-write toggle; the separate 503 answer for overwritten writes; dashboard tests. Eight remaining tasks became five.
+
+## 2026-10-13 · Finishing: server, Docker, dashboard, trim
+- **Budgets worked.** With line limits in the brief, the agents delivered the node server in 143 lines (limit about 150), file storage in
+  41, and the dashboard in 80 lines of Python plus 157 of HTML (limit about 250). Earlier, without limits, the same tool wrote 3,400 lines of tests.
+- **Test trim (commit `c51fa0b`):** tests went from 3,403 to 2,176 lines and from 1,249 to 1,117 tests. Cut: case matrices, variants of
+  the same behavior, single-node tests the cluster tests already cover, and tests of helpers. Kept: every named rule test, the scenario tests,
+  the safety checks and the fuzz test. Some older entries in this file and in `PLAN.md` describe tests that no longer exist; for example,
+  `tests/test_safety_checks.py` now checks that a message names the property, tick, node and index, not the exact text.
+- **How the trim was verified:** eight deliberate bugs, one at a time, are all still caught by the trimmed suite. I re-ran one myself:
+  with R6's check removed, 20 Figure 8 cases, 7 fuzz seeds and 2 unit tests fail.
+- **Verified live in Docker, by running it, not by reading it:** election; a follower redirecting a write (421); killing the leader (a new
+  one in 3.6 s); a restarted node catching up from its saved log; and the partition scenario through the dashboard's own buttons, with the
+  cut-off leader's entry shown dashed, a second leader elected at a higher term, and everything converging after Heal.
+- **Not verified:** the dashboard's retry after a 421 (it needs a leader to step down between two requests); the agent checked it only
+  against fake nodes. The "no majority" scenario was run in Docker by the agent, not by me.
+- **Decisions the dashboard agent made that I kept:** `/api/write` always answers 200 and reports the node's own status inside the body,
+  and each log box shows its command on hover (one addition beyond the spec).

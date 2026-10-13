@@ -37,7 +37,7 @@ in a few minutes and any agent can pick it up cold. The spec is in `DESIGN.md`, 
 | **G5** | **Gate: cluster runs in Docker** | T17–T20 | approved |
 | T21 | Dashboard: `dashboard/app.py` (about 80 lines) + `static/index.html` (about 250 lines), no tests | G5 | review |
 | T22 | ~~Dashboard UI~~ (merged into T21) | n/a | cut |
-| T23 | `README.md` (about 120 lines): design, trade-offs, limitations, how to run, AI usage | T21 | todo |
+| T23 | `README.md` (about 120 lines): design, trade-offs, limitations, how to run, AI usage | T21 | review |
 | **G6** | **Gate: ready to submit** | all | waiting |
 
 ## How to work a task (any agent)
@@ -73,6 +73,9 @@ in a few minutes and any agent can pick it up cold. The spec is in `DESIGN.md`, 
 The user marks tasks `done` and gates `approved` after review. Agents never do.
 
 ## Task details
+
+> The notes under each task were written when that task landed. The test trim on 2026-10-13 (commit `c51fa0b`) later removed
+> some of the tests they mention: case matrices, duplicate variants, and tests of helpers. The named rule tests all remain.
 
 ### T01 · Project scaffold
 `pyproject.toml` (requires Python ≥ 3.12, aiohttp, pytest dev group, `pythonpath = ["."]`), `.python-version`,
@@ -221,3 +224,4 @@ the majority side elects a leader and commits, and after healing the old leader 
 ### T23 · README
 `README.md`. **Budget: about 120 lines.** What it is, how to run the tests and the demo, the design in a few paragraphs with the main
 trade-offs, the four demo scenarios with the terminal commands, known limitations, and how AI was used (summarized from `AI_NOTES.md`).
+*Notes:* written by the orchestrator once the final numbers were known (1,117 tests, about 14 s). 124 lines. The R5 and lost-vote fuzz rates are quoted from the agent's 8,000-seed run and marked as not re-run.
