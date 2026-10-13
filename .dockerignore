@@ -1,0 +1,8 @@
+.git
+.venv
+.lavish
+.claude
+tests
+notes
+**/__pycache__
+*.md

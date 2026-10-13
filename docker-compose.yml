@@ -1,0 +1,47 @@
+# Five Raft nodes, one image. Each node keeps its term, vote and log in its own volume,
+# so a killed node comes back with its state. Reset everything with: docker compose down -v
+x-node: &node
+  build: .
+  image: raft-kv
+  restart: "no" # a killed node stays down until you start it again
+
+x-peers: &peers node1=node1:8000,node2=node2:8000,node3=node3:8000,node4=node4:8000,node5=node5:8000
+
+services:
+  node1:
+    <<: *node
+    container_name: node1
+    environment: { NODE_ID: node1, PEERS: *peers }
+    volumes: ["node1:/data"]
+    ports: ["8001:8000"]
+  node2:
+    <<: *node
+    container_name: node2
+    environment: { NODE_ID: node2, PEERS: *peers }
+    volumes: ["node2:/data"]
+    ports: ["8002:8000"]
+  node3:
+    <<: *node
+    container_name: node3
+    environment: { NODE_ID: node3, PEERS: *peers }
+    volumes: ["node3:/data"]
+    ports: ["8003:8000"]
+  node4:
+    <<: *node
+    container_name: node4
+    environment: { NODE_ID: node4, PEERS: *peers }
+    volumes: ["node4:/data"]
+    ports: ["8004:8000"]
+  node5:
+    <<: *node
+    container_name: node5
+    environment: { NODE_ID: node5, PEERS: *peers }
+    volumes: ["node5:/data"]
+    ports: ["8005:8000"]
+
+volumes:
+  node1:
+  node2:
+  node3:
+  node4:
+  node5:

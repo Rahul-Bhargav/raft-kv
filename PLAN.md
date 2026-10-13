@@ -33,7 +33,7 @@ in a few minutes and any agent can pick it up cold. The spec is in `DESIGN.md`, 
 | T17 | `server/file_storage.py`: `FileStorage` (about 40 lines, 2 tests) | G4 | review |
 | T18 | `server/node_server.py`: the whole node server in one file (about 150 lines, at most 4 tests) | T17 | review |
 | T19 | ~~Client writes~~ (merged into T18) | n/a | cut |
-| T20 | `Dockerfile` + `docker-compose.yml` (**the user must install Docker first**) | T18 | todo |
+| T20 | `Dockerfile` + `docker-compose.yml` (**the user must install Docker first**) | T18 | review |
 | **G5** | **Gate: cluster runs in Docker** | T17–T20 | waiting |
 | T21 | Dashboard: `dashboard/app.py` (about 80 lines) + `static/index.html` (about 250 lines), no tests | G5 | todo |
 | T22 | ~~Dashboard UI~~ (merged into T21) | n/a | cut |
@@ -202,7 +202,11 @@ Not handled, by decision: retries applying twice (T16 cut), linearizable reads, 
 ### T20 · Docker
 `Dockerfile`, `docker-compose.yml`, `.dockerignore`. **Budget: about 50 lines in total.** One image for every container. `node1`–`node5`
 with fixed `container_name`, a named volume at `/data` and `restart: "no"`, plus `dashboard` on port 8080.
-Check with `docker compose up --build` and `curl localhost:<port>/state`. **Blocked until the user installs Docker Desktop or OrbStack.**
+Check with `docker compose up --build` and `curl localhost:<port>/state`.
+*Notes:* done by the orchestrator: 63 lines in total. Nodes listen on `localhost:8001`–`8005`. The `dashboard` service is added in T21.
+Checked live with Docker 29.8.2: a leader is elected; a follower answers 421; killing the leader gives a new one in 3.6 s; the restarted
+node rejoins and rebuilds its KV store from its saved log; with `{leader + 1} | {3}` blocked, the old leader's write times out (504),
+the majority side elects a leader and commits, and after healing the old leader steps down and its uncommitted entry is replaced.
 
 ### T21 · Dashboard
 `dashboard/app.py`, `dashboard/static/index.html`. **Budget: about 80 lines of Python and 250 lines of HTML/CSS/JS. No tests.**
