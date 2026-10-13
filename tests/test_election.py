@@ -3,7 +3,7 @@
 from raft.messages import Entry
 from raft.node import RaftConfig, Role
 from sim.cluster import SimCluster
-from tests.invariants import checked_cluster
+from tests.safety_checks import checked_cluster
 
 # Bounds, in ticks, with about 2x headroom over the worst case measured over these seeds.
 # The first timeout alone is 30-59 ticks with the default config.

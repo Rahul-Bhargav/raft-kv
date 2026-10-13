@@ -5,7 +5,7 @@ This is the canonical spec for implementers. It condenses the reviewed design in
 If the two disagree, **this file wins**. Change it only together with the user.
 
 A hand-written Raft implementation in Python 3.12 that replicates a key-value store across 5 nodes.
-- **Correctness evidence:** a deterministic simulator with randomized fault injection and invariant checks.
+- **Correctness evidence:** a deterministic simulator with randomized fault injection and safety checks.
 - **Demo:** the *same* Raft code running in Docker containers over HTTP, with a live dashboard.
 
 ## Decisions
@@ -164,7 +164,7 @@ class SimCluster:
     storages: dict[str, MemoryStorage]    # survive crashes
     kvs: dict[str, KVStore]               # rebuilt on restart
     now: int
-    checkers: list[Callable[["SimCluster"], None]]   # run after every step (invariants)
+    checkers: list[Callable[["SimCluster"], None]]   # run after every step (safety checks)
     def step(self) -> None    # now+=1; tick live nodes; deliver due msgs to live nodes; collect outputs; apply; run checkers
     def run(self, ticks: int) -> None
     def run_until(self, cond: Callable[[], bool], max_ticks: int = 2000) -> bool
@@ -181,7 +181,9 @@ All randomness comes from one `random.Random(seed)`, so the same seed gives the 
 - A new `partition()` replaces the old one.
 - A message blocked at delivery is gone for good.
 
-## Invariants (`tests/invariants.py`, checked after every simulator step)
+## Safety properties (`tests/safety_checks.py`, checked after every simulator step)
+
+The first four are Raft's own safety properties, with the names the paper gives them in its Figure 3. The fifth is ours.
 
 1. **Election Safety:** at most one leader per term, ever (keep a record of term → leader).
 2. **Log Matching:** if two logs share (index, term), they are identical up to that index.

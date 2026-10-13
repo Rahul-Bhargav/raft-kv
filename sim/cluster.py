@@ -27,7 +27,7 @@ class SimCluster:
             node_id: self._new_node(node_id) for node_id in self.ids  # None while crashed
         }
         self.now = 0
-        self.checkers: list[Callable[["SimCluster"], None]] = []  # invariants, run after every step
+        self.checkers: list[Callable[["SimCluster"], None]] = []  # safety checks, run after every step
         self.events: list[tuple[int, str, str]] = []  # (tick, node_id, event), for debugging
 
     # --- running ---

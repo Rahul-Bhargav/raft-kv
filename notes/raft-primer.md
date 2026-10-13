@@ -102,7 +102,7 @@ rules make this work:
 
 ## Safety properties to test
 
-These are the properties the paper proves. They are what the invariant checker should verify after
+These are the properties the paper proves. They are what the safety checker should verify after
 every simulation step:
 
 | Property | Meaning |

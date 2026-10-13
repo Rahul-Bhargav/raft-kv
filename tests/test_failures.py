@@ -13,7 +13,7 @@ import pytest
 
 from raft.node import RaftConfig, RaftNode, Role
 from sim.cluster import SimCluster
-from tests.invariants import checked_cluster
+from tests.safety_checks import checked_cluster
 
 # Bounds, in ticks, with about 2x headroom over the worst case measured over these seeds.
 ELECTION_BOUND = 150  # test_election.py measured the worst first election at 84

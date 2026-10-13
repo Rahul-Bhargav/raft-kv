@@ -16,7 +16,7 @@ Each seed is one run of a 5-node cluster. What the seed randomizes:
   waits, so writes get lost, overwritten and recovered in every way the faults allow.
 
 What is checked:
-- after every tick, all five invariants in tests/invariants.py (the cluster is a checked_cluster);
+- after every tick, all five safety properties in tests/safety_checks.py (the cluster is a checked_cluster);
 - at the end, after healing the network and restarting every crashed node: a leader is elected,
   every node has applied everything in the leader's log, every acknowledged write is in every KV
   store, nothing that was never written is, and all KV stores are equal.
@@ -34,7 +34,7 @@ import pytest
 
 from raft.node import RaftConfig
 from sim.cluster import SimCluster
-from tests.invariants import checked_cluster
+from tests.safety_checks import checked_cluster
 
 SEEDS = int(os.environ.get("FUZZ_SEEDS", "1000"))
 
@@ -93,7 +93,7 @@ def run_schedule(seed: int) -> collections.Counter[str]:
         dup_rate=rng.uniform(0, 0.3),
     )
     faults = Faults(rng, strike_chance=rng.choice(STRIKE_CHANCES))
-    cluster.checkers.append(faults)  # after the invariants: a fault lands between two steps
+    cluster.checkers.append(faults)  # after the safety checks: a fault lands between two steps
     written, acknowledged = {}, {}
     while cluster.now < FAULT_TICKS:
         if rng.random() < WRITE_CHANCE:

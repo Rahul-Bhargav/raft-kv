@@ -124,12 +124,12 @@ The README's AI section is summarized from this file. Newest entries go at the b
   `tick 49: n1 counts entry 2, from term 2, as committed (R6)`. The (e) test fails too.
 - **Where the AI checked its own test:** I also removed the test's own R6 checks along with R6. The end state still looked
   fine (every node ends with n5's entries), so the test would have passed, yet n1 had applied index 2 twice, from term 2
-  before its crash and from term 3 after. The per-tick checker is what catches it. This is noted for T14's invariants.
+  before its crash and from term 3 after. The per-tick checker is what catches it. This is noted for T14's safety checks.
 
-## 2026-10-10 · Invariants (T14, written by Claude Opus)
+## 2026-10-10 · Safety checks (T14, written by Claude Opus)
 - **What runs:** every cluster test now builds its cluster with `checked_cluster()`, so Election Safety, Log Matching, Leader
   Completeness, State Machine Safety and No lost acknowledged writes are checked after every step of every scripted test (and
-  of the fuzz test, T15). A failure names the invariant, the tick, the nodes and the index/term, for example
+  of the fuzz test, T15). A failure names the property, the tick, the nodes and the index/term, for example
   `State Machine Safety violated at tick 91: n1 applied index 2 from term 3 = {'op': 'noop'}, but n1 (before restarting)
   applied index 2 from term 2 = {'op': 'noop'} at tick 49`.
 - **History, not snapshots (the T13 requirement):** with R6's term check and `test_figure8`'s own R6 checks removed in a scratch
@@ -137,11 +137,11 @@ The README's AI section is summarized from this file. Newest entries go at the b
   seeds. The real checker fails all 10: Leader Completeness first (n5 leads term 5 without the term-2 entry n1 committed at ticks
   48-52). With Leader Completeness switched off, State Machine Safety fires when n5 applies its own index 2 while n1 is down; with
   it looking at n1 alone, it reports the exact case above, n1 against itself before its restart.
-- **Each invariant fires on a real bug** (scratch copies of `raft/node.py`): a majority of 2 gives `Election Safety violated at
+- **Each safety property fires on a real bug** (scratch copies of `raft/node.py`): a majority of 2 gives `Election Safety violated at
   tick 53: n5 and n1 both led term 1`; a follower that skips the consistency check gives Log Matching (`n2 has index 3 from term
   4 ... after a term-1 entry, but n3 had index 3 from term 4 ... after a term-2 entry`); voting without R3's log check gives Leader
   Completeness (a term-4 leader missing a committed write); `take_committed` skipping the newest entry gives No lost acknowledged
-  writes (the leader's KV store lacks the write it just acknowledged). `tests/test_invariants.py` also feeds each check a
+  writes (the leader's KV store lacks the write it just acknowledged). `tests/test_safety_checks.py` also feeds each check a
   hand-built bad state and pins the exact message.
 - **Judgment calls:**
   - *Acknowledged write* = a `set` entry applied by the leader that proposed it. That is exactly when `SimCluster.write` returns
@@ -160,7 +160,7 @@ The README's AI section is summarized from this file. Newest entries go at the b
 - **What runs:** `tests/test_fuzz.py`, one test per seed (default 1000, `FUZZ_SEEDS` to change; the whole suite takes about 13 s on
   this machine). Each seed randomizes the network (delays, 0-20% drops, 0-30% duplicates), the batch cap (none, 1 or 2), crashes
   (at most 2 of 5 down), restarts, reboots, partitions, heals, strikes on new leaders, and client writes made while all of that
-  goes on. All five invariants run every tick. At the end the network heals, every node restarts, and the test requires a settled
+  goes on. All five safety properties run every tick. At the end the network heals, every node restarts, and the test requires a settled
   leader, every acknowledged write on every node and equal KV stores. A failure prints the seed and the command to rerun it alone.
 - **Measured, not assumed, and the first version was too weak:** with plain random faults, removing R6 failed 1 seed in 8,000.
   Figure 8 needs a leader lost in a window of a few ticks (after it copies an older term's entry to a majority, before its own
@@ -174,7 +174,7 @@ The README's AI section is summarized from this file. Newest entries go at the b
     example an acknowledged write k43=v43 applied on n1, then a noop applied at the same index on n3), and 12 on the node's
     own "deleting committed" assert.
   - R5 truncating on every AppendEntries: 5,006 seeds fail (63%): State Machine Safety 3,346 (a node deleted an entry it had
-    committed), Leader Completeness 979, and 681 never settle at the end with no invariant broken. I checked one of those (seed
+    committed), Leader Completeness 979, and 681 never settle at the end with no safety property broken. I checked one of those (seed
     3 before the checker fix below): a follower had deleted entries it had confirmed, the leader still counted them and
     ignored the follower's refusals as stale, so the follower never caught up.
   - A vote not kept across a restart: 109 seeds fail (1.4%): Election Safety 100, and the node's own two-leaders assert 9.
@@ -183,9 +183,15 @@ The README's AI section is summarized from this file. Newest entries go at the b
   entry and deleted it within one step, and the checker crashed with an `IndexError` reading it. And a node that deleted a
   committed entry in a later step wasn't noticed at all: only the end-of-run check failed. Both are now State Machine Safety
   violations ("n2 deleted or replaced index 4 (from term 5), but it had committed up to index 4"), each with a unit test.
-  `RaftNode` asserts it never does this, and the checker relied on that without checking it. The T14 evidence (each invariant
+  `RaftNode` asserts it never does this, and the checker relied on that without checking it. The T14 evidence (each safety property
   firing, and the Figure 8 case) was rerun afterwards and is unchanged.
 - **Large runs on the real code:** seeds 0-9999 all pass, run in batches (the worst settle time over them is 604 ticks; the bound
   is 1200). Through pytest, `FUZZ_SEEDS=5000` passes in 56 s. Before the last checker fix, `FUZZ_SEEDS=10000` passed in 114 s.
 - **Guarding against a toothless fuzzer:** `test_schedules_are_not_trivial` checks that 20 seeds really crash, reboot,
   partition, strike and acknowledge writes (at least half of the measured counts), so a broken fault injector can't pass quietly.
+
+## 2026-10-12 · Review of T14 naming
+- **My call:** the AI named the checker `Invariants` (`tests/invariants.py`, `InvariantViolation`). I don't want jargon I'd have to
+  explain before I can explain the code. Renamed to `tests/safety_checks.py`, `SafetyChecker` and `SafetyViolation`, and the docs now
+  say "safety properties", which is the Raft paper's own term (Figure 3) for exactly these checks.
+- **Verified:** no mention of the old name is left in code or docs, and all 1,243 tests pass unchanged.

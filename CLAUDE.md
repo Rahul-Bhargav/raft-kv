@@ -4,7 +4,7 @@ A hand-written Raft implementation in Python that replicates a key-value store. 
 
 ## Read these first
 - @ASSIGNMENT.md: the requirements and the evaluation criteria.
-- `DESIGN.md`: the canonical spec, with interfaces, rules R1–R7 and invariants. Code must match it.
+- `DESIGN.md`: the canonical spec, with interfaces, rules R1–R7 and safety properties. Code must match it.
 - `PLAN.md`: the task list, statuses, review gates and **the protocol for working a task**. Follow it exactly.
 - `AI_NOTES.md`: a log of how AI was used. Append to it when something notable happens.
 - `.lavish/design.html`: the reviewed visual design (98 KB). Only open it when DESIGN.md isn't enough.

@@ -1,9 +1,9 @@
-"""Raft's safety invariants, checked after every simulator step.
+"""Raft's safety properties, checked after every simulator step.
 
-Every SimCluster test builds its cluster with checked_cluster(), which puts an Invariants checker
-first in cluster.checkers. So the five invariants below run after every step of every cluster test,
-scripted or fuzzed. A broken invariant raises InvariantViolation (an AssertionError) whose message
-names the invariant, the tick, the nodes and the index/term involved.
+Every SimCluster test builds its cluster with checked_cluster(), which puts a SafetyChecker
+first in cluster.checkers. So the five safety properties below run after every step of every cluster test,
+scripted or fuzzed. A broken safety property raises SafetyViolation (an AssertionError) whose message
+names the property, the tick, the nodes and the index/term involved.
 
 The checker only reads the cluster: it never sends anything, changes state or draws random numbers,
 so a run is the same with or without it. It keeps a history, not just a picture of the current
@@ -38,27 +38,27 @@ from sim.cluster import SimCluster
 _BECAME_LEADER = re.compile(r"became leader \(term (\d+)\)")  # the event RaftNode emits
 
 
-class InvariantViolation(AssertionError):
-    """A Raft safety invariant failed. The message says which one, when, where and on what."""
+class SafetyViolation(AssertionError):
+    """A Raft safety property failed. The message says which one, when, where and on what."""
 
 
 def checked_cluster(*args, **kwargs) -> SimCluster:
-    """A SimCluster that checks every invariant after every step. Tests use this, not SimCluster.
+    """A SimCluster that checks every safety property after every step. Tests use this, not SimCluster.
 
     The checker goes first in cluster.checkers, so it sees each step before a test's own checker
     crashes or partitions anything.
     """
     cluster = SimCluster(*args, **kwargs)
-    cluster.checkers.append(Invariants())
+    cluster.checkers.append(SafetyChecker())
     return cluster
 
 
-def _fail(invariant: str, tick: int, details: str) -> None:
-    raise InvariantViolation(f"{invariant} violated at tick {tick}: {details}")
+def _fail(name: str, tick: int, details: str) -> None:
+    raise SafetyViolation(f"{name} violated at tick {tick}: {details}")
 
 
-class Invariants:
-    """A SimCluster checker for the five invariants. Call it after every step.
+class SafetyChecker:
+    """A SimCluster checker for the five safety properties. Call it after every step.
 
     Each check is incremental: it looks only at what changed since the last step (new log entries,
     newly committed or applied indexes, new leaders), so the cost stays small on long runs.

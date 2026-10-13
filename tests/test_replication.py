@@ -5,7 +5,7 @@ import random
 from raft.messages import Entry
 from raft.node import Role
 from sim.cluster import SimCluster
-from tests.invariants import checked_cluster
+from tests.safety_checks import checked_cluster
 
 ELECTION_BOUND = 150  # ticks; test_election.py measured the worst first election at 84
 # A follower applies an entry when the next AppendEntries brings the new commit index: at most
