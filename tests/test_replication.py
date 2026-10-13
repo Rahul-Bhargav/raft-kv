@@ -7,13 +7,13 @@ from raft.node import Role
 from sim.cluster import SimCluster
 from tests.safety_checks import checked_cluster
 
-ELECTION_BOUND = 150  # ticks; test_election.py measured the worst first election at 84
+ELECTION_DEADLINE = 150  # ticks; test_election.py measured the worst first election at 84
 # A follower applies an entry when the next AppendEntries brings the new commit index: at most
 # one heartbeat interval (10) plus the largest delay later.
-FOLLOWER_APPLY_BOUND = 20
+FOLLOWER_APPLY_DEADLINE = 20
 
 
-def elect(cluster: SimCluster, max_ticks: int = ELECTION_BOUND) -> str:
+def elect(cluster: SimCluster, max_ticks: int = ELECTION_DEADLINE) -> str:
     assert cluster.run_until(lambda: cluster.leader() is not None, max_ticks), (
         f"no leader within {max_ticks} ticks"
     )
@@ -41,7 +41,7 @@ def test_a_write_applies_on_every_node():
         leader_id = elect(cluster)
         assert cluster.write("x", "1"), f"seed {seed}"
         assert cluster.kvs[leader_id].data == {"x": "1"}  # applied there when write() returns
-        cluster.run(FOLLOWER_APPLY_BOUND)
+        cluster.run(FOLLOWER_APPLY_DEADLINE)
         for node_id in cluster.ids:
             assert cluster.kvs[node_id].data == {"x": "1"}, f"seed {seed}, {node_id}"
             assert log(cluster, node_id) == log(cluster, leader_id), f"seed {seed}, {node_id}"
@@ -52,7 +52,7 @@ def test_writes_apply_in_order():
     elect(cluster)
     for key, value in [("x", "1"), ("y", "2"), ("x", "3")]:
         assert cluster.write(key, value)
-    cluster.run(FOLLOWER_APPLY_BOUND)
+    cluster.run(FOLLOWER_APPLY_DEADLINE)
     for node_id in cluster.ids:
         assert cluster.kvs[node_id].data == {"x": "3", "y": "2"}, node_id
 
@@ -84,7 +84,7 @@ def test_conflicting_uncommitted_entries_are_overwritten():
     cluster = checked_cluster(seed=2)
     old = elect(cluster)
     assert cluster.write("a", "1")
-    cluster.run(FOLLOWER_APPLY_BOUND)
+    cluster.run(FOLLOWER_APPLY_DEADLINE)
 
     # Cut the leader off. It still accepts a write, but alone it can never commit it.
     cluster.partition({old})
@@ -100,7 +100,7 @@ def test_conflicting_uncommitted_entries_are_overwritten():
 
     # Once healed, the old leader learns the higher term (R2), and its entry is replaced (R5).
     cluster.heal()
-    cluster.run(FOLLOWER_APPLY_BOUND)
+    cluster.run(FOLLOWER_APPLY_DEADLINE)
     assert cluster.nodes[old].role == Role.FOLLOWER
     assert log(cluster, old) == log(cluster, new)
     assert log(cluster, old)[lost_index - 1].command.get("key") != "lost"
@@ -116,7 +116,7 @@ def test_write_fails_when_its_entry_is_overwritten():
     # leader's noop lands on the same index as the lost write. (Without this, the new leader's
     # log can be shorter, nothing reaches that index until a later write, and write() times out.)
     assert cluster.write("a", "1")
-    cluster.run(FOLLOWER_APPLY_BOUND)
+    cluster.run(FOLLOWER_APPLY_DEADLINE)
     cluster.partition({old})
     # Heal as soon as the other four have a new leader, while write() is still waiting.
     cluster.checkers.append(lambda c: c.heal() if c.leader() != old else None)

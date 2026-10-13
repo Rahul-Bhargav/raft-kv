@@ -15,23 +15,24 @@ from raft.node import RaftConfig, RaftNode, Role
 from sim.cluster import SimCluster
 from tests.safety_checks import checked_cluster
 
-# Bounds, in ticks, with about 2x headroom over the worst case measured over these seeds.
-ELECTION_BOUND = 150  # test_election.py measured the worst first election at 84
+# Deadlines, in ticks: how long a test waits for something to happen before it fails.
+# Each is about twice the slowest case measured over these seeds.
+ELECTION_DEADLINE = 150  # test_election.py measured the worst first election at 84
 # The three nodes left without the old leader need all three votes, so split votes are common.
-NEW_LEADER_BOUND = 250  # measured worst: 125
-RECOVERY_BOUND = 110  # a leader again once a third node restarts; measured worst: 53
+NEW_LEADER_DEADLINE = 250  # measured worst: 125
+RECOVERY_DEADLINE = 110  # a leader again once a third node restarts; measured worst: 53
 # A follower applies an entry when the next AppendEntries brings the new commit index: at most
 # one heartbeat interval (10) plus the largest delay later. After a heal the old leader steps down
 # and catches up within that same window (measured worst: 9).
-FOLLOWER_APPLY_BOUND = 20
+FOLLOWER_APPLY_DEADLINE = 20
 NO_MAJORITY_TICKS = 1000  # about 20 election timeouts: plenty of chances to (wrongly) elect someone
 
 SCRIPTED = RaftConfig(election_timeout_min=1000, election_timeout_max=1001)
 # A RequestVote and its reply take at most 3 + 3 ticks with the default network delays.
-CAMPAIGN_TICKS = 10
+CAMPAIGN_DEADLINE = 10
 
 
-def elect(cluster: SimCluster, max_ticks: int = ELECTION_BOUND) -> str:
+def elect(cluster: SimCluster, max_ticks: int = ELECTION_DEADLINE) -> str:
     assert cluster.run_until(lambda: cluster.leader() is not None, max_ticks), (
         f"no leader within {max_ticks} ticks"
     )
@@ -39,9 +40,9 @@ def elect(cluster: SimCluster, max_ticks: int = ELECTION_BOUND) -> str:
 
 
 def campaign(cluster: SimCluster, node_id: str) -> bool:
-    """Make `node_id` stand for election now. True if it wins within CAMPAIGN_TICKS."""
+    """Make `node_id` stand for election now. True if it wins within CAMPAIGN_DEADLINE."""
     cluster.time_out(node_id)
-    return cluster.run_until(lambda: cluster.nodes[node_id].role == Role.LEADER, CAMPAIGN_TICKS)
+    return cluster.run_until(lambda: cluster.nodes[node_id].role == Role.LEADER, CAMPAIGN_DEADLINE)
 
 
 def leaders_of_term(cluster: SimCluster, term: int) -> list[str]:
@@ -103,13 +104,13 @@ def split_off_the_leader_and_one_follower(cluster: SimCluster) -> tuple[str, str
     """
     old = elect(cluster)
     assert cluster.write("a", "1")
-    cluster.run(FOLLOWER_APPLY_BOUND)
+    cluster.run(FOLLOWER_APPLY_DEADLINE)
     buddy = next(node_id for node_id in cluster.ids if node_id != old)
     cluster.partition({old, buddy})  # the three nodes not named form the other side
     # The old leader is the only leader for now, so write() proposes there. It waits the whole
-    # NEW_LEADER_BOUND and fails, while the other side elects a new leader in the meantime.
-    assert not cluster.write("lost", "x", max_ticks=NEW_LEADER_BOUND)
-    assert cluster.run_until(lambda: cluster.leader() not in {old, buddy}, NEW_LEADER_BOUND)
+    # NEW_LEADER_DEADLINE and fails, while the other side elects a new leader in the meantime.
+    assert not cluster.write("lost", "x", max_ticks=NEW_LEADER_DEADLINE)
+    assert cluster.run_until(lambda: cluster.leader() not in {old, buddy}, NEW_LEADER_DEADLINE)
     new = cluster.leader()  # the leader with the highest term
     assert cluster.write("b", "2")  # three of five is a majority
     return old, buddy, new
@@ -137,7 +138,7 @@ def test_minority_leader_cannot_commit():
         assert buddy_node.commit_index == old_node.commit_index, f"seed {seed}"
         committed = cluster.storages[old].entry_at(old_node.commit_index)
         assert committed.command == {"op": "set", "key": "a", "value": "1"}, f"seed {seed}"
-        cluster.run(FOLLOWER_APPLY_BOUND)  # so the majority-side followers have applied b=2 too
+        cluster.run(FOLLOWER_APPLY_DEADLINE)  # so the majority-side followers have applied b=2 too
         for node_id in cluster.ids:
             expected = {"a": "1"} if node_id in {old, buddy} else {"a": "1", "b": "2"}
             assert cluster.kvs[node_id].data == expected, f"seed {seed}, {node_id}"
@@ -158,7 +159,7 @@ def test_stale_leader_steps_down():
         cluster = checked_cluster(seed=seed)
         old, buddy, new = split_off_the_leader_and_one_follower(cluster)
         cluster.heal()
-        cluster.run(FOLLOWER_APPLY_BOUND)
+        cluster.run(FOLLOWER_APPLY_DEADLINE)
         old_node = cluster.nodes[old]
         assert old_node.role == Role.FOLLOWER, f"seed {seed}"
         assert (old_node.term, old_node.leader_id) == (cluster.nodes[new].term, new), seed
@@ -177,7 +178,7 @@ def crash_the_leader_and_two_followers(cluster: SimCluster) -> tuple[list[str], 
     """Commit a=1 everywhere, then crash 3 of 5, leader included. Returns (crashed, survivors)."""
     leader_id = elect(cluster)
     assert cluster.write("a", "1")
-    cluster.run(FOLLOWER_APPLY_BOUND)
+    cluster.run(FOLLOWER_APPLY_DEADLINE)
     followers = [node_id for node_id in cluster.ids if node_id != leader_id]
     crashed, survivors = [leader_id] + followers[:2], followers[2:]
     for node_id in crashed:
@@ -225,7 +226,7 @@ def test_restarting_one_node_restores_progress():
     leader is elected and commits again. The restarted node has kept its log on disk, adopts the
     survivors' higher term from their first message (R2), and rebuilds its KV store by
     re-applying committed entries.
-    We check: a leader within RECOVERY_BOUND, a new write succeeds, and all three live nodes end
+    We check: a leader within RECOVERY_DEADLINE, a new write succeeds, and all three live nodes end
     up with both the old write and the new one.
     """
     for seed in range(20):
@@ -233,9 +234,9 @@ def test_restarting_one_node_restores_progress():
         crashed, survivors = crash_the_leader_and_two_followers(cluster)
         cluster.run(300)  # a while with no majority, so the survivors' terms run ahead
         cluster.restart(crashed[0])  # the old leader; it comes back as a follower
-        assert cluster.run_until(lambda: cluster.leader() is not None, RECOVERY_BOUND), seed
+        assert cluster.run_until(lambda: cluster.leader() is not None, RECOVERY_DEADLINE), seed
         assert cluster.write("b", "2"), f"seed {seed}"
-        cluster.run(FOLLOWER_APPLY_BOUND)
+        cluster.run(FOLLOWER_APPLY_DEADLINE)
         for node_id in [crashed[0], *survivors]:
             assert cluster.kvs[node_id].data == {"a": "1", "b": "2"}, f"seed {seed}, {node_id}"
 
@@ -270,9 +271,9 @@ def test_restarting_one_node_restores_progress():
 # moment in (c) where a majority has the old entry but not n1's new one would never happen.
 FIGURE_8 = replace(SCRIPTED, max_entries_per_append=1)
 # One or two entries reaching a follower, one entry per heartbeat: measured worst 16 ticks.
-STAGE_BOUND = 35
+STAGE_DEADLINE = 35
 # After (d), n5 overwrites entries 2-3 on three followers by backing up: measured worst 33.
-CATCH_UP_BOUND = 70
+CATCH_UP_DEADLINE = 70
 
 
 def live(cluster: SimCluster) -> list[RaftNode]:
@@ -288,13 +289,13 @@ def figure_8_up_to_c(cluster: SimCluster) -> None:
     """Script stages (a)-(c) of Figure 8, checking each stage's picture as it goes."""
     # Before (a): n2 leads term 1, and entry 1 commits on every node.
     assert campaign(cluster, "n2")
-    assert cluster.run_until(lambda: all(n.commit_index == 1 for n in live(cluster)), STAGE_BOUND)
+    assert cluster.run_until(lambda: all(n.commit_index == 1 for n in live(cluster)), STAGE_DEADLINE)
 
     # (a) n1 wins term 2. Its noop (entry 2) is on its way to everyone, so split the network
     # right away: only n2 gets it.
     assert campaign(cluster, "n1")
     cluster.partition({"n1", "n2"}, {"n3", "n4", "n5"})
-    assert cluster.run_until(lambda: cluster.nodes["n1"].match_index["n2"] == 2, STAGE_BOUND)
+    assert cluster.run_until(lambda: cluster.nodes["n1"].match_index["n2"] == 2, STAGE_DEADLINE)
     assert log_terms(cluster) == {"n1": [1, 2], "n2": [1, 2], "n3": [1], "n4": [1], "n5": [1]}
 
     # (b) n1 crashes. n5 wins term 3 with n3's and n4's votes, then is cut off before its noop
@@ -313,7 +314,7 @@ def figure_8_up_to_c(cluster: SimCluster) -> None:
     assert not campaign(cluster, "n1")
     assert campaign(cluster, "n1")
     assert cluster.nodes["n1"].term == 4
-    assert cluster.run_until(lambda: cluster.nodes["n1"].match_index["n3"] == 2, STAGE_BOUND)
+    assert cluster.run_until(lambda: cluster.nodes["n1"].match_index["n3"] == 2, STAGE_DEADLINE)
     assert log_terms(cluster) == {
         "n1": [1, 2, 4],
         "n2": [1, 2, 4],
@@ -364,9 +365,9 @@ def test_figure8(seed: int) -> None:
         return log_terms(cluster)[node_id] == [1, 3, 5] and node.commit_index == 3
 
     others = ["n2", "n3", "n4"]
-    assert cluster.run_until(lambda: all(has_n5s_log(n) for n in others), CATCH_UP_BOUND)
+    assert cluster.run_until(lambda: all(has_n5s_log(n) for n in others), CATCH_UP_DEADLINE)
     cluster.restart("n1")  # n1's copy of the term-2 entry goes too
-    assert cluster.run_until(lambda: has_n5s_log("n1"), CATCH_UP_BOUND)
+    assert cluster.run_until(lambda: has_n5s_log("n1"), CATCH_UP_DEADLINE)
     entry_2 = cluster.storages["n5"].entry_at(2)
     assert all(cluster.storages[n].entry_at(2) == entry_2 for n in cluster.ids)
 
@@ -392,7 +393,7 @@ def test_figure8_current_term_entry_commits_the_old_one(seed: int) -> None:
         commit_indexes.add(n1.commit_index)
 
     cluster.checkers.append(record_n1s_commit_index)
-    assert cluster.run_until(lambda: n1.commit_index == 3, STAGE_BOUND)
+    assert cluster.run_until(lambda: n1.commit_index == 3, STAGE_DEADLINE)
     cluster.checkers.remove(record_n1s_commit_index)
     assert commit_indexes == {0, 3}  # entries 2 and 3 were committed in the same step
     assert log_terms(cluster)["n3"] == [1, 2, 4]
@@ -414,4 +415,4 @@ def test_figure8_current_term_entry_commits_the_old_one(seed: int) -> None:
             node.commit_index == 4 for node in live(cluster)
         )
 
-    assert cluster.run_until(caught_up, CATCH_UP_BOUND)
+    assert cluster.run_until(caught_up, CATCH_UP_DEADLINE)

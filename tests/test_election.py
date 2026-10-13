@@ -5,17 +5,18 @@ from raft.node import RaftConfig, Role
 from sim.cluster import SimCluster
 from tests.safety_checks import checked_cluster
 
-# Bounds, in ticks, with about 2x headroom over the worst case measured over these seeds.
+# Deadlines, in ticks: how long a test waits for something to happen before it fails.
+# Each is about twice the slowest case measured over these seeds.
 # The first timeout alone is 30-59 ticks with the default config.
-FIRST_ELECTION_BOUND = 150  # measured worst: 84
-RE_ELECTION_BOUND = 200  # measured worst: 106 after the crash
+FIRST_ELECTION_DEADLINE = 150  # measured worst: 84
+RE_ELECTION_DEADLINE = 200  # measured worst: 106 after the crash
 
 
 def leaders(cluster: SimCluster) -> list[str]:
     return [n.node_id for n in cluster.nodes.values() if n is not None and n.role == Role.LEADER]
 
 
-def elect(cluster: SimCluster, max_ticks: int = FIRST_ELECTION_BOUND) -> str:
+def elect(cluster: SimCluster, max_ticks: int = FIRST_ELECTION_DEADLINE) -> str:
     assert cluster.run_until(lambda: cluster.leader() is not None, max_ticks), (
         f"no leader within {max_ticks} ticks"
     )
@@ -61,7 +62,7 @@ def test_a_new_leader_is_elected_after_the_leader_crashes():
         old_leader = elect(cluster)
         old_term = cluster.nodes[old_leader].term
         cluster.crash(old_leader)
-        assert cluster.run_until(lambda: cluster.leader() is not None, RE_ELECTION_BOUND), seed
+        assert cluster.run_until(lambda: cluster.leader() is not None, RE_ELECTION_DEADLINE), seed
         new_leader = cluster.leader()
         assert new_leader != old_leader
         assert cluster.nodes[new_leader].term > old_term
@@ -118,7 +119,7 @@ def test_follower_keeps_leader_under_load():
         cluster.checkers.append(same_leader)
         end = cluster.now + 3000
         writes = 0
-        # Also bounded by count, so a broken write() that never ticks can't loop forever.
+        # Also limited by count, so a broken write() that never ticks can't loop forever.
         while cluster.now < end and writes < 3000:
             assert cluster.write(f"k{writes}", str(writes)), f"seed {seed}, write {writes}"
             writes += 1
@@ -138,7 +139,7 @@ def test_partitioned_leader_is_replaced_and_steps_down_on_heal():
     cluster = checked_cluster(seed=3)
     old_leader = elect(cluster)
     cluster.partition({old_leader})  # the other four can still form a majority
-    assert cluster.run_until(lambda: cluster.leader() != old_leader, RE_ELECTION_BOUND)
+    assert cluster.run_until(lambda: cluster.leader() != old_leader, RE_ELECTION_DEADLINE)
     new_leader = cluster.leader()
     assert leaders(cluster) == sorted([old_leader, new_leader])  # the old one lingers, cut off
     cluster.heal()

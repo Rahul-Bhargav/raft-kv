@@ -52,7 +52,7 @@ MAX_DOWN = 2  # a minority of 5, so the end can require a leader again
 STRIKE_CHANCES = [0, 0.5, 1]  # per seed: the share of new leaders that are struck
 STRIKE_WITHIN = 15  # ticks after a leader is first seen
 # Ticks to settle once healed and restarted: 2x the worst measured over seeds 0-9999 (604).
-SETTLE_BOUND = 1200
+SETTLE_DEADLINE = 1200
 
 
 @pytest.mark.parametrize("seed", range(SEEDS))
@@ -110,8 +110,8 @@ def run_schedule(seed: int) -> collections.Counter[str]:
     for node_id in cluster.ids:
         if cluster.nodes[node_id] is None:
             cluster.restart(node_id)
-    assert cluster.run_until(lambda: settled(cluster), SETTLE_BOUND), (
-        f"no settled leader within {SETTLE_BOUND} ticks of healing and restarting everyone"
+    assert cluster.run_until(lambda: settled(cluster), SETTLE_DEADLINE), (
+        f"no settled leader within {SETTLE_DEADLINE} ticks of healing and restarting everyone"
     )
     leader_kv = cluster.kvs[cluster.leader()].data
     for node_id in cluster.ids:
