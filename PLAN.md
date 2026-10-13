@@ -30,7 +30,7 @@ in a few minutes and any agent can pick it up cold. The spec is in `DESIGN.md`, 
 | T15 | `tests/test_fuzz.py`: randomized fault schedules over many seeds | T14 | done |
 | **G4** | **Gate: correctness evidence complete** | T12–T15 | approved |
 | T16 | ~~KV duplicate detection~~ | n/a | cut |
-| T17 | `server/file_storage.py`: `FileStorage` (about 40 lines, 2 tests) | G4 | todo |
+| T17 | `server/file_storage.py`: `FileStorage` (about 40 lines, 2 tests) | G4 | review |
 | T18 | `server/node_server.py`: the whole node server in one file (about 150 lines, at most 4 tests) | T17 | todo |
 | T19 | ~~Client writes~~ (merged into T18) | n/a | cut |
 | T20 | `Dockerfile` + `docker-compose.yml` (**the user must install Docker first**) | T18 | todo |
@@ -181,6 +181,7 @@ Cut for simplicity. Limitation to state in the README: a client that retries a w
 Implements `Storage`. On every change, write `{term, voted_for, log}` as JSON to `path + ".tmp"`, flush, fsync, then `os.replace` it over `path`.
 Tests (with `tmp_path`): reopening the same path restores term, vote and log; a leftover `.tmp` file is ignored.
 Simplest route: subclass `MemoryStorage` and save after each mutating call.
+*Notes:* 41 lines (`wc -l`) + 24 lines for the 2 tests. Subclasses `MemoryStorage`; the three mutating methods call `_save()`. Not handled: the directory isn't fsynced after the rename (a power cut could bring back the previous file), the whole log is rewritten on every change (fine at demo size), a corrupt file fails at startup, and the directory must already exist.
 
 ### T18 · Node server (includes client writes)
 `server/node_server.py`, `tests/test_node_server.py`. **Budget: about 150 lines of code in one file, at most 4 tests.**
