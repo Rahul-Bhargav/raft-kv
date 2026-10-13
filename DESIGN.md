@@ -202,7 +202,7 @@ The first four are Raft's own safety properties, with the names the paper gives 
 - Environment variables: `NODE_ID`, `PEERS` (`id=host:port,...`), `PORT` (8000), `DATA_DIR` (`/data`), `TICK_MS` (100).
 - One `step(call)` helper wraps every call into the node:
   - It sends `take_messages()` as fire-and-forget `asyncio.create_task(post)` calls with a 500 ms timeout, ignoring errors.
-  - It applies `take_committed()` to the KV store, resolves waiting client writes, and stamps `take_events()` with wall-clock time.
+  - It applies `take_committed()` to the KV store and keeps the last 20 `take_events()`, each with a wall-clock time.
 - `FileStorage(path)` implements `Storage`. On every mutation it writes `{term, voted_for, log}` to `path + ".tmp"`, flushes, fsyncs, then `os.replace`s it over `path`.
 - Partition filter: a `blocked` set of peer IDs. Drop outbound messages to them and inbound messages from them.
   Control endpoints are never filtered.
